@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AETHER WEB BRAIN · 頂尖網站大腦收藏庫</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+
+  <style>
+    /* ============================
+       DESIGN TOKEN — 夢幻光子系
+    ============================ */
+    :root {
+      --bg:            #09090F;
+      --bg-raised:     #0F0F1A;
+      --bg-card:       #13131F;
+      --bg-border:     #1E1E30;
+      --bg-border-hover: #2D2D48;
+      --gold:          #C9A96E;
+      --gold-light:    #E2C89A;
+      --gold-dim:      #6B5530;
+      --purple:        #7C3AED;
+      --purple-dim:    #4C1D95;
+      --teal:          #06B6D4;
+      --pink:          #EC4899;
+      --text-primary:  #F0EEF8;
+      --text-secondary:#8080A0;
+      --text-muted:    #4A4A6A;
+      --radius:        6px;
+      --radius-lg:     12px;
+      --radius-xl:     18px;
+      --transition:    0.3s cubic-bezier(0.4,0,0.2,1);
+      --font-heading:  'Cormorant Garamond', Georgia, serif;
+      --font-body:     'Inter', sans-serif;
+      --font-mono:     'JetBrains Mono', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; font-size: 16px; }
+
+    body {
+      background: var(--bg);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-weight: 300;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+
+    /* ============================
+       AURORA BACKGROUND — CSS only, GPU-accelerated
+       Uses transform + opacity only (no repaints)
+    ============================ */
+    .aurora-wrap {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      will-change: transform;
+      /* filter:blur stays constant so no repaint on animation */
+    }
+
+    .orb-1 {
+      width: 800px; height: 600px;
+      top: -200px; left: -200px;
+      background: radial-gradient(circle, rgba(201,169,110,0.22) 0%, transparent 70%);
+      filter: blur(90px);
+      animation: drift1 28s ease-in-out infinite;
+    }
+    .orb-2 {
+      width: 700px; height: 700px;
+      top: 30%; right: -300px;
+      background: radial-gradient(circle, rgba(124,58,237,0.18) 0%, transparent 70%);
+      filter: blur(100px);
+      animation: drift2 35s ease-in-out infinite;
+    }
+    .orb-3 {
+      width: 500px; height: 500px;
+      bottom: -150px; left: 30%;
+      background: radial-gradient(circle, rgba(6,182,212,0.12) 0%, transparent 70%);
+      filter: blur(80px);
+      animation: drift3 22s ease-in-out infinite;
+    }
+    .orb-4 {
+      width: 400px; height: 400px;
+      top: 60%; right: 15%;
+      background: radial-gradient(circle, rgba(236,72,153,0.10) 0%, transparent 70%);
+      filter: blur(70px);
+      animation: drift4 40s ease-in-out infinite;
+    }
+
+    @keyframes drift1 {
+      0%,100% { transform: translate(0px, 0px) scale(1); }
+      25%      { transform: translate(80px, 60px) scale(1.06); }
+      50%      { transform: translate(40px, 120px) scale(0.94); }
+      75%      { transform: translate(-60px, 40px) scale(1.02); }
+    }
+    @keyframes drift2 {
+      0%,100% { transform: translate(0px, 0px) scale(1); }
+      20%      { transform: translate(-100px, 80px) scale(1.08); }
+      50%      { transform: translate(-60px, -100px) scale(0.96); }
+      80%      { transform: translate(40px, 50px) scale(1.04); }
+    }
+    @keyframes drift3 {
+      0%,100% { transform: translate(0px, 0px) scale(1); }
+      33%      { transform: translate(100px, -80px) scale(1.1); }
+      66%      { transform: translate(-80px, -40px) scale(0.92); }
+    }
+    @keyframes drift4 {
+      0%,100% { transform: translate(0px, 0px) scale(1); }
+      30%      { transform: translate(-120px, 100px) scale(1.12); }
+      60%      { transform: translate(60px, -80px) scale(0.9); }
+    }
+
+    /* ============================
+       SUBTLE GRID OVERLAY
+    ============================ */
+    .grid-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(201,169,110,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(201,169,110,0.025) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    /* ============================
+       LAYOUT
+    ============================ */
+    .page-wrap { position: relative; z-index: 1; }
+    .container  { max-width: 1280px; margin: 0 auto; padding: 0 32px; }
+
+    /* ============================
+       NAV
+    ============================ */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      padding: 0 32px;
+      transition: background var(--transition), border-color var(--transition);
+      border-bottom: 1px solid transparent;
+    }
+    nav.scrolled {
+      background: rgba(9,9,15,0.88);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-color: var(--bg-border);
+    }
+    .nav-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .nav-logo {
+      font-family: var(--font-heading);
+      font-size: 1.25rem;
+      font-weight: 400;
+      letter-spacing: 0.18em;
+      color: var(--text-primary);
+      text-decoration: none;
+      text-transform: uppercase;
+    }
+    .nav-logo em { color: var(--gold); font-style: normal; }
+
+    .nav-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 12px;
+      border: 1px solid var(--bg-border);
+      border-radius: 20px;
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+    }
+    .badge-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #22c55e;
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%,100% { opacity: 1; }
+      50%      { opacity: 0.4; }
+    }
+
+    .nav-right { display: flex; align-items: center; gap: 16px; }
+    .update-info {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    /* ============================
+       HERO
+    ============================ */
+    .hero {
+      padding-top: 140px;
+      padding-bottom: 80px;
+      text-align: center;
+    }
+
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 16px;
+      border: 1px solid rgba(201,169,110,0.3);
+      border-radius: 20px;
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--gold);
+      font-family: var(--font-mono);
+      margin-bottom: 28px;
+    }
+
+    .hero h1 {
+      font-family: var(--font-heading);
+      font-size: clamp(2.8rem, 6vw, 5rem);
+      font-weight: 300;
+      line-height: 1.12;
+      letter-spacing: -0.01em;
+      margin-bottom: 24px;
+      color: var(--text-primary);
+    }
+    .hero h1 em {
+      font-style: italic;
+      color: var(--gold);
+    }
+
+    .hero-desc {
+      font-size: 1.05rem;
+      color: var(--text-secondary);
+      max-width: 560px;
+      margin: 0 auto 48px;
+      line-height: 1.7;
+      font-weight: 300;
+    }
+
+    /* Stats Row */
+    .stats-row {
+      display: flex;
+      justify-content: center;
+      gap: 0;
+      flex-wrap: wrap;
+      border: 1px solid var(--bg-border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    .stat-item {
+      padding: 20px 32px;
+      text-align: center;
+      flex: 1;
+      min-width: 140px;
+      border-right: 1px solid var(--bg-border);
+    }
+    .stat-item:last-child { border-right: none; }
+    .stat-num {
+      font-family: var(--font-heading);
+      font-size: 2rem;
+      font-weight: 400;
+      color: var(--gold);
+      line-height: 1;
+      display: block;
+    }
+    .stat-label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-top: 4px;
+      display: block;
+    }
+
+    /* ============================
+       FILTER BAR
+    ============================ */
+    .filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 40px;
+    }
+    .filter-label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+      margin-right: 4px;
+    }
+    .filter-btn {
+      padding: 7px 18px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 400;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      transition: all var(--transition);
+      border: 1px solid var(--bg-border);
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: var(--font-body);
+    }
+    .filter-btn:hover {
+      border-color: var(--gold);
+      color: var(--gold);
+    }
+    .filter-btn.active {
+      background: rgba(201,169,110,0.12);
+      border-color: var(--gold);
+      color: var(--gold-light);
+    }
+
+    /* ============================
+       WEBSITE GRID
+    ============================ */
+    .websites-section { padding: 0 0 100px; }
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 32px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--bg-border);
+    }
+    .section-title {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .site-count {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+    .site-count span { color: var(--gold); }
+
+    .websites-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 20px;
+    }
+
+    /* ============================
+       WEBSITE CARD
+    ============================ */
+    .site-card {
+      background: var(--bg-card);
+      border: 1px solid var(--bg-border);
+      border-radius: var(--radius-xl);
+      padding: 28px;
+      transition: all var(--transition);
+      cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      position: relative;
+      overflow: hidden;
+    }
+    .site-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--card-accent, var(--gold-dim)), transparent);
+      opacity: 0;
+      transition: opacity var(--transition);
+    }
+    .site-card:hover {
+      border-color: var(--bg-border-hover);
+      background: #17172A;
+      transform: translateY(-2px);
+      box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+    }
+    .site-card:hover::before { opacity: 1; }
+
+    /* Card top row */
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .card-identity { display: flex; align-items: center; gap: 14px; }
+
+    .site-logo {
+      width: 44px; height: 44px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-heading);
+      font-size: 1.2rem;
+      font-weight: 400;
+      flex-shrink: 0;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .site-name-wrap {}
+    .site-name {
+      font-size: 1.05rem;
+      font-weight: 500;
+      color: var(--text-primary);
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+    }
+    .site-url {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      margin-top: 3px;
+    }
+
+    /* Category + Hero type badges */
+    .card-badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 0.68rem;
+      letter-spacing: 0.06em;
+      font-weight: 400;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+    }
+    .badge-saas    { background: rgba(124,58,237,0.15); color: #A78BFA; border: 1px solid rgba(124,58,237,0.25); }
+    .badge-dtc     { background: rgba(16,185,129,0.12); color: #6EE7B7; border: 1px solid rgba(16,185,129,0.25); }
+    .badge-ai      { background: rgba(6,182,212,0.12);  color: #67E8F9; border: 1px solid rgba(6,182,212,0.25); }
+    .badge-creative{ background: rgba(249,115,22,0.12); color: #FCA47A; border: 1px solid rgba(249,115,22,0.25); }
+    .badge-hero    { background: rgba(201,169,110,0.10); color: var(--gold); border: 1px solid rgba(201,169,110,0.2); }
+
+    /* Color palette */
+    .color-palette {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .color-swatch {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.1);
+      flex-shrink: 0;
+    }
+    .palette-label {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      margin-left: 6px;
+    }
+
+    /* Key insight */
+    .card-insight {
+      padding: 14px 16px;
+      background: rgba(255,255,255,0.03);
+      border-radius: var(--radius);
+      border-left: 2px solid;
+      border-left-color: var(--card-accent, var(--gold-dim));
+    }
+    .insight-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+      margin-bottom: 6px;
+    }
+    .insight-text {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      line-height: 1.55;
+    }
+
+    /* Tech stack + CRO data */
+    .card-meta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .meta-chip {
+      font-size: 0.68rem;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      padding: 3px 9px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    /* Card footer */
+    .card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 14px;
+      border-top: 1px solid var(--bg-border);
+      margin-top: auto;
+    }
+    .card-cro {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+    .card-cro strong { color: #22c55e; font-weight: 400; }
+    .card-link-icon {
+      width: 28px; height: 28px;
+      border-radius: 8px;
+      border: 1px solid var(--bg-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      transition: all var(--transition);
+    }
+    .site-card:hover .card-link-icon {
+      border-color: var(--gold-dim);
+      color: var(--gold);
+    }
+
+    /* "New" tag for dynamically discovered sites */
+    .card-new-tag {
+      position: absolute;
+      top: 14px; right: 14px;
+      background: rgba(201,169,110,0.15);
+      border: 1px solid rgba(201,169,110,0.35);
+      color: var(--gold);
+      font-size: 0.62rem;
+      font-family: var(--font-mono);
+      letter-spacing: 0.1em;
+      padding: 2px 8px;
+      border-radius: 10px;
+      text-transform: uppercase;
+    }
+
+    /* ============================
+       NEW DISCOVERIES SECTION
+    ============================ */
+    .discoveries-section {
+      padding: 0 0 80px;
+    }
+    .discoveries-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 32px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--bg-border);
+    }
+    .discoveries-title {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(34,197,94,0.1);
+      border: 1px solid rgba(34,197,94,0.25);
+      color: #86efac;
+      font-size: 0.68rem;
+      font-family: var(--font-mono);
+      padding: 3px 10px;
+      border-radius: 10px;
+    }
+
+    /* ============================
+       FOOTER
+    ============================ */
+    footer {
+      border-top: 1px solid var(--bg-border);
+      padding: 40px 0;
+      text-align: center;
+    }
+    .footer-text {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      letter-spacing: 0.06em;
+    }
+    .footer-text em { color: var(--gold); font-style: normal; }
+
+    /* ============================
+       HIDDEN CARDS (filter)
+    ============================ */
+    .site-card.hidden { display: none; }
+
+    /* ============================
+       RESPONSIVE
+    ============================ */
+    @media (max-width: 768px) {
+      .container { padding: 0 20px; }
+      .websites-grid { grid-template-columns: 1fr; }
+      .stats-row { gap: 0; }
+      .stat-item { padding: 16px 20px; min-width: 100px; }
+      .hero h1 { font-size: 2.4rem; }
+      nav { padding: 0 20px; }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Aurora Background -->
+  <div class="aurora-wrap" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+    <div class="orb orb-4"></div>
+  </div>
+  <div class="grid-overlay" aria-hidden="true"></div>
+
+  <div class="page-wrap">
+    <!-- NAV -->
+    <nav id="nav">
+      <div class="nav-inner">
+        <a href="#" class="nav-logo">AETHER · <em>WEB</em> BRAIN</a>
+        <div class="nav-badge">
+          <span class="badge-dot"></span>
+          <span>v1 · LIVE COLLECTION</span>
+        </div>
+        <div class="nav-right">
+          <span class="update-info" id="last-update">載入中…</span>
+        </div>
+      </div>
+    </nav>
+
+    <!-- HERO -->
+    <section class="hero">
+      <div class="container">
+        <div class="hero-eyebrow">
+          ✦ Aethermetaverse WEB-BRAIN-v1 ✦ 2026
+        </div>
+        <h1>頂尖網站大腦<br><em>設計收藏庫</em></h1>
+        <p class="hero-desc">
+          從 SaaS 官網、品牌落地頁、電商 DTC 到 AI 產品——<br>
+          拆解世界級網站的版型骨架、色彩系統與轉換決策。
+        </p>
+        <div class="stats-row">
+          <div class="stat-item">
+            <span class="stat-num" id="total-count">31</span>
+            <span class="stat-label">收錄網站</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-num">4</span>
+            <span class="stat-label">設計 Token</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-num">47</span>
+            <span class="stat-label">設計模式</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-num">5,718</span>
+            <span class="stat-label">研究筆記行</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MAIN CONTENT -->
+    <main>
+      <div class="container">
+
+        <!-- Filter Bar -->
+        <div class="filter-bar">
+          <span class="filter-label">分類：</span>
+          <button class="filter-btn active" data-filter="all">全部</button>
+          <button class="filter-btn" data-filter="saas">SaaS 官網</button>
+          <button class="filter-btn" data-filter="dtc">電商 DTC</button>
+          <button class="filter-btn" data-filter="ai">AI 產品</button>
+          <button class="filter-btn" data-filter="creative">創意/品牌</button>
+        </div>
+
+        <!-- Core Collection -->
+        <section class="websites-section">
+          <div class="section-header">
+            <span class="section-title">// 核心收藏 · Core Collection</span>
+            <span class="site-count">共 <span id="filtered-count">12</span> 個網站</span>
+          </div>
+
+          <div class="websites-grid" id="grid-core">
+
+            <!-- 01 Linear -->
+            <a href="https://linear.app" target="_blank" rel="noopener"
+               class="site-card" data-category="saas"
+               style="--card-accent: #8B5CF6;">
+              <div class="card-header">
+                <div class="card-identity">
+                  <div class="site-logo" style="background: #0E0E10; color: #8B5CF6;">L</div>
+                  <div class="site-name-wrap">
+                    <div class="site-name">Linear</div>
+                    <div class="site-url">linear.app</div>
+                  </div>
+                </div>
+              </div>
+              <div class="card-badges">
+                <span class="badge badge-saas">SaaS</span>
+                <span class="badge badge-hero">聲明型 Hero</span>
+              </div>
+              <div class="color-palette">
+                <span class="color-swatch" style="background:#0E0E10;" title="#0E0E10"></span>
+                <span class="color-swatch" style="background:#8B5CF6;" title="Purple accent"></span>
+                <span class="color-swatch" style="background:#FFFFFF;" title="#FFFFFF"></span>
+                <span class="palette-label">Dark-first · Purple accent</span>
+              </div>
+              <div class="card-insight">
+                <div class="insight-label">核心決策</div>
+                <div class="insight-text">Hero 刻意無 CTA 按鈕——傳遞「不需要說服你」的極度自信品牌姿態。功能獨立 Section 循序漸進，讓產品生命週期一覽無遺。</div>
+              </div>
+              <div class="card-meta">
+                <span class="meta-chip">Skewed 3D 截圖</span>
+                <span class="meta-chip">Changelog Section</span>
+                <span class="meta-chip">25,000+ teams</span>
+              </div>
+              <div class="card-footer">
+                <span class="card-cro">用戶：<strong>工程師文化團隊</strong></span>
+                <span class="card-link-icon">↗</span>
+              </div>
+            </a>
+
+            <!-- 02 Vercel -->
+            <a href="https://vercel.com" target="_blank" rel="noopener"
+               class="site-card" data-category="saas"
+               style="--card-accent: #888888;">
+              <div class="card-header">
+                <div class="card-identity">
+                  <div class="site-logo" style="background:#000; color:#FFF;">▲</div>
+                  <div class="site-name-wrap">
+                    <div class="site-name">Vercel</div>
+                    <div class="site-url">vercel.com</div>
+                  </div>
+                </div>
+              </div>
+              <div class="card-badges">
+                <span class="badge badge-saas">SaaS</span>
+                <span class="badge badge-hero">說服型 Hero</span>
+              </div>
+              <div class="color-palette">
+                <span class="color-swatch" style="background:#000000;"></span>
+                <span class="color-swatch" style="background:#FFFFFF;"></span>
+                <span class="color-swatch" style="background:#0070F3;"></span>
+                <span class="palette-label">極簡黑白 · Blueprint Grid</span>
+              </div>
+              <div class="card-insight">
+                <div class="insight-label">核心決策</div>
+                <div class="insight-text">「Blueprint Grid」美學——帶細格線的深色背景，透明度僅 10-20%，創造精確、工程感與可信度。Live Demo 排行榜作為 Hero 內容，即時數據比任何文案都更有說服力。</div>
+              </div>
+              <div class="card-meta">
+                <span class="meta-chip">Geist 字體</span>
+                <span class="meta-chip">AI Model Leaderboard</span>
+                <span class="meta-chip">船速 6× faster</span>
+              </div>
+              <div class="card-footer">
+                <span class="card-cro">用戶：<strong>前端工程師/開發者</strong></span>
+                <span class="card-link-icon">↗</span>
+              </div>
+            </a>
+
+            <!-- 03 Stripe -->
+            <a href="https://stripe.com" target="_blank" rel="noopener"
+               class="site-card" data-category="saas"
+               style="--card-accent: #635BFF;">
+              <div class="card-header">
+                <div class="card-identity">
+                  <div class="site-logo" style="background:#635BFF; color:#FFF; font-family: var(--font-body); font-size:1rem; font-weight:600;">S</div>
+                  <div class="site-name-wrap">
+                    <div class="site-name">Stripe</div>
+                    <div class="site-url">stripe.com</div>
+                  </div>
+                </div>
+              </div>
+              <div class="card-badges">
+                <span class="badge badge-saas">SaaS / FinTech</span>
+                <span class="badge badge-hero">說服型 Hero</span>
+              </div>
+              <div class="color-palette">
+                <span class="color-swatch" style="background:#635BFF;"></span>
+                <span class="color-swatch" style="background:#FFFFFF;"></span>
+                <span class="color-swatch" style="background:#00D4FF;"></span>
+                <span class="palette-label">Purple → 藍青漸層</span>
+              </div>
+              <div class="card-insight">
+                <div class="insight-label">核心決策</div>
+                <div class="insight-text">$1.9T 交易量一秒解決信任問題。Google 登入 CTA 降低 B2B 帳號創建摩擦。彩色漸層卡片打破全白無聊感。</div>
+              </div>
+              <div class="card-meta">
+                <span class="meta-chip">$1.9T 支付量</span>
+                <span class="meta-chip">99.999% Uptime</span>
+                <span class="meta-chip">135+ 貨幣</span>
+              </div>
+              <div class="card-footer">
+                <span class="card-cro">轉換：<strong>+28% Logo cloud</strong></span>
+                <span class="card-link-icon">↗</span>
+              </div>
+            </a>
+
+            <!-- 04 Notion -->
+            <a href="https://notion.so" target="_blank" rel="noopener"
+               class="site-card" data-category="saas"
+               style="--card-accent: #B5A17A;">
+              <div class="card-header">
+                <div class="card-identity">
+                  <div class="site-logo" style="background:#FFFDF7; color:#1A1A1A; font-family: var(--font-heading); font-size:1.4rem;">N</div>
+                  <div class="site-name-wrap">
+                    <div class="site-name">Notion</div>
+                    <div class="site-url">notion.so</div>
+                  </div>
+                </div>
+              </div>
+              <div class="card-badges">
+                <span class="badge badge-saas">SaaS</span>
+                <span class="badge badge-hero">說服型 Hero</span>
+              </div>
+              <div class="color-palette">
+                <span class="color-swatch" style="background:#FFFDF7;"></span>
+                <span class="color-swatch" style="background:#1A1A1A;"></span>
+                <span class="color-swatch" style="background:#E8D5B7;"></span>
+                <span class="palette-label">Warm White · Serif 標題</span>
+              </div>
+              <div class="card-insight">
+                <div class="insight-label">核心決策</div>
+                <div class="insight-text">省錢計算機將「All-in-one」抽象訴求轉化為個人化財務動機。Serif 標題傳達知識感與人文溫度，形成差異化。2025 年轉型 AI Agent 工作系統。</div>
+              </div>
+              <div class="card-meta">
+                <span class="meta-chip">Warm Minimalism</span>
+                <span class="meta-chip">Agent Use Cases</span>
+                <span class="meta-chip">省錢計算機</span>
+              </div>
+              <div class="card-footer">
+                <span class="card-cro">用戶：<strong>知識工作者 / 團隊</strong></span>
+                <span class="card-link-icon">↗</span>
+              </div>
+            </a>
+
+            <!-- 05 Loom -->
+            <a href="https://loom.com" target="_blank" rel="noopener"
+               class="site-card" data-category="saas"
+               style="--card-accent: #FF4C00;">
+              <div class="card-header">
+                <div class="card-identity">
+                  <div class="site-logo" style="background:#FF4C00; color:#FFF; font-family: var(--font-body); font-size:1rem; font-weight:600;">⬤</div>
+                  <div class="site-name-wrap">
+                    <div class="site-name">Loom</div>
+                    <div class="site-url">loom.com</div>
+                  </div>
+                </div>
+              </div>
+              <div class="card-badges">
+                <span class="badge badge-saas">SaaS / B2C</span>
+                <span class="badge badge-hero">產品即 Hero</span>
+              </div>
+              <div class="color-palette">
+                <span class="color-swatch" style="background:#FF4C00;"></span>
+                <span class="color-swatch" style="background:#FFFFFF;"></span>
+                <span class="color-swatch" style="background:#1A1A1A;"></span>
+                <span class="palette-label">橘紅品牌色 · 白底</span>
+              </div>
+              <div class="card-insight">
+                <div class="insight-label">核心決策</div>
+                <div class="insight-text">首屏放 400K 企業數字直接消除「這是小工具嗎？」的疑慮。功能清單用 Bullet 而非卡片，快速掃讀效率更高。</div>
+              </div>
+              <div class="card-meta">
+                <span class="meta-chip">400,000 companies</span>
+                <span class="meta-chip">錄屏 → 分享 SaaS</span>
+              </div>
+              <div class="card-footer">
+                <span class="card-cro">用戶：<strong>遠距工作者 / 設計師</strong></span>
+                <span class="card-link-icon">↗</span>
+              </div>
+            </a>
+
+            <!-- 06 AG1 -->
+            <a href="https://drinkag1.com" target="_blank" rel="noopener"
+               class="site-card" data-category="dtc"
+               style="--card-accent: #2D6A4F;">
+              <div class="card-header">
+                <div class="card-identity">
+                  <div class="site-logo" style="background:#2D6A4F; color:#F5F0E8; font-family: var(--font-body); font-size:0.75rem; font-weight:600; letter-spacing:0.05em;">AG1</div>
+                  <div class="site-name-wrap">
+                    <div class="site-name">AG1</div>
+                    <div class="site-url">drinkag1.com</div>
+                  </div>
+                </div>
+              </div>
+              <div class="card-badges">
+                <span class="badge badge-dtc">DTC 電商</span>
+                <span class="badge badge-hero">說服型 Hero</span>
+              </div>
+              <div class="color-palette">
+                <span class="color-swatch" style="background:#2D6A4F;"></span>
+                <span class="color-swatch" style="background:#F5F0E8;"></span>
+                <span class="color-swatch" style="background:#8B6914;"></span>
+                <span class="palette-label">Premium Health · 深綠 + 奶油</span>
+              </div>
+              <div class="card-insight">
+                <div class="insight-label">核心決策</div>
+                <div class="insight-text">訂閱設為 Default 選項——讓決策從「要不要訂閱」變成「要不要換成單次」，心理上大幅提升訂閱率。成本比較圖把「貴」變成「省錢」。</div>
+              </div>
+              <div class="card-meta">
+                <span class="meta-chip">50,000+ 5星評價</span>
+                <span class="meta-chip">Huberman 背書</span>
+                <span class="meta-chip">訂閱 Default</span>
+              </div>
+              <div class="card-footer">
+                <span class="card-cro">轉換：<strong>訂閱率大幅提升</strong></span>
+                <span class="card-link-icon">↗</span>
+              </div>
+            </a>
+
+            <!-- 07 Glossier -->
+            <a href="https://glossier.com" target="_blank" rel="noopener"
+               class="site-card" data-category="dtc"
+               style="--card-accent: #F5C0B8;">
+              <div class="card-header">
+                <div class="card-identity">
+                  <div class="site-logo" style="background:#F5C0B8; color:#1A1A1A; font-family: var(--font-body); font-size:0.7rem; font-weight:500; letter-spacing:0.05em;">G</div>
+                  <div class="site-name-wrap">
+                    <div class="site-name">Glossier</div>
+                    <div class="site-url">glossier.com</div>
+                  </div>
+                </div>
+              </div>
+              <div class="card-badges">
+                <span class="badge badge-dtc">DTC 美妝</span>
+                <span class="badge badge-hero">產品即 Hero</span>
+              </div>
+              <div class="color-palette">
+                <span class="color-swatch" style="background:#F5C0B8;"></span>
+                <span class="color-swatch" style="background:#FFFFFF;"></span>
+                <span class="color-swatch" style="background:#E8E0D0;"></span>
+                <span class="palette-label">嬰兒粉 · 平易近人奢華</span>
+              </div>
+              <div class="card-insight">
+                <div class="insight-label">核心決策</div>
+                <div class="insight-text">「You Smell Like Vacation」感性優先文案。粉紅泡泡紙袋讓用戶主動 tag 成 UGC 觸發器。「Leaving Soon」稀缺性標籤比「Sale」更有效。</div>
+              </div>
+              <div class="card-meta">
+                <span class="meta-chip">Gen Z 語言</span>
+                <span class="meta-chip">UGC 觸發設計</span>
+                <span class="meta-chip">稀缺性標籤</span>
+              </div>
+              <div class="card-footer">
+                <span class="card-cro">用戶：<strong>Gen Z 女性 16–25</strong></span>
+                <span class="card-link-icon">↗</span>
+              </div>
+            </a>
+
+            <!-- 08 Midjourney -->
+            <a href="https://midjourney.com" target="_blank" rel="noopener"
+               class="site-card" data-category="ai"
+               style="--card-accent: #666666;">
+              <div class="card-header">
+                <div class="card-identity">
+                  <div class="site-logo" style="background:#F5F5F5; color:#1A1A1A; font-family: var(--font-heading); font-size:1.2rem;">MJ</div>
+                  <div class="site-name-wrap">
+                    <div class="site-name">Midjourney</div>
+                    <div class="site-url">midjourney.com</div>
+                  </div>
+                </div>
+              </div>
+              <div class="card-badges">
+                <span class="badge badge-ai">AI 產品</span>
+                <span class="badge badge-hero">反行銷 Hero</span>
+              </div>
+              <div class="color-palette">
+                <span class="color-swatch" style="background:#FFFFFF;"></span>
+                <span class="color-swatch" style="background:#1A1A1A;"></span>
+                <span class="palette-label">刻意無設計感 · 研究機構氣質</span>
+              </div>
+              <div class="card-insight">
+                <div class="insight-label">核心決策</div>
+                <div class="insight-text">官網幾乎沒有傳統行銷結構——沒有定價、沒有見證輪播。「不需要說服你」本身就是品牌聲明，傳遞神秘感與高端感。</div>
+              </div>
+              <div class="card-meta">
+                <span class="meta-chip">純文字排版</span>
+                <span class="meta-chip">Discord 生態</span>
+                <span class="meta-chip">研究機構定位</span>
+              </div>
+              <div class="card-footer">
+                <span class="card-cro">策略：<strong>產品說話，不做廣告</strong></span>
+                <span class="card-link-icon">↗</span>
+              </div>
+            </a>
+
+            <!-- 09 ElevenLabs -->
+            <a href="https://elevenlabs.io" target="_blank" rel="noopener"
+               class="site-card" data-category="ai"
+               style="--card-accent: #FF6B35;">
+              <div class="card-header">
+                <div class="card-identity">
+                  <div class="site-logo" style="background:#0A0A0A; color:#FF6B35; font-family: var(--font-mono); font-size:0.75rem; font-weight:400; letter-spacing:0.05em;">11</div>
+                  <div class="site-name-wrap">
+                    <div class="site-name">ElevenLabs</div>
+                    <div class="site-url">elevenlabs.io</div>
+                  </div>
+                </div>
+              </div>
+              <div class="card-badges">
+                <span class="badge badge-ai">AI / 語音</span>
+                <span class="badge badge-hero">互動型 Hero</span>
+              </div>
+              <div class="color-palette">
+                <span class="color-swatch" style="background:#0A0A0A;"></span>
+                <span class="color-swatch" style="background:#FF6B35;"></span>
+                <span class="color-swatch" style="background:#6B98FF;"></span>
+                <span class="palette-label">深黑 · 音波橘 · 冷藍調</span>
+              </div>
+              <div class="card-insight">
+                <div class="insight-label">核心決策</div>
+                <div class="insight-text">「Interacting is believing」——訪客直接在頁面播放語音示例。刻意迴避 AI 圖像，改用抽象音波形態，在競爭對手中形成獨特視覺語言。雙平台分流減少決策疲勞。</div>
+              </div>
+              <div class="card-meta">
+                <span class="meta-chip">Disney / NVIDIA 背書</span>
+                <span class="meta-chip">Voice Signatures</span>
+                <span class="meta-chip">AREA 17 設計</span>
+              </div>
+              <div class="card-footer">
+                <span class="card-cro">設計：<strong>抽象音波視覺語言</strong></span>
+                <span class="card-link-icon">↗</span>
+              </div>
+            </a>
+
+            <!-- 10 Runway -->
+            <a href="https://runwayml.com" target="_blank" rel="noopener"
+               class="site-card" data-category="ai"
+               style="--card-accent: #4466FF;">
+              <div class="card-header">
+                <div class="card-identity">
+                  <div class="site-logo" style="background:#050510; color:#6B8AFF; font-family: var(--font-mono); font-size:0.75rem; font-weight:400; letter-spacing:0.02em;">RW</div>
+                  <div class="site-name-wrap">
+                    <div class="site-name">Runway</div>
+                    <div class="site-url">runwayml.com</div>
+                  </div>
+                </div>
+              </div>
+              <div class="card-badges">
+                <span class="badge badge-ai">AI / 影片</span>
+                <span class="badge badge-hero">聲明型 Hero</span>
+              </div>
+              <div class="color-palette">
+                <span class="color-swatch" style="background:#050510;"></span>
+                <span class="color-swatch" style="background:#FFFFFF;"></span>
+                <span class="color-swatch" style="background:#4466FF;"></span>
+                <span class="palette-label">極深黑 · 電影院沉浸感</span>
+              </div>
+              <div class="card-insight">
+                <div class="insight-label">核心決策</div>
+                <div class="insight-text">「Simulate the World」研究機構語言把產品從「工具」提升為「技術使命」。與 Lionsgate / NVIDIA 合作直接定義行業地位。影片 Demo 本身就是最佳視覺。</div>
+              </div>
+              <div class="card-meta">
+                <span class="meta-chip">Gen-4.5</span>
+                <span class="meta-chip">Lionsgate 合作</span>
+                <span class="meta-chip">GWM 研究</span>
+              </div>
+              <div class="card-footer">
+                <span class="card-cro">定位：<strong>電影級 AI 研究機構</strong></span>
+                <span class="card-link-icon">↗</span>
+              </div>
+            </a>
+
+            <!-- 11 Perplexity -->
+            <a href="https://perplexity.ai" target="_blank" rel="noopener"
+               class="site-card" data-category="ai"
+               style="--card-accent: #20B2D4;">
+              <div class="card-header">
+                <div class="card-identity">
+                  <div class="site-logo" style="background:#1C1C28; color:#20B2D4; font-family: var(--font-mono); font-size:0.8rem; font-weight:500;">pplx</div>
+                  <div class="site-name-wrap">
+                    <div class="site-name">Perplexity</div>
+                    <div class="site-url">perplexity.ai</div>
+                  </div>
+                </div>
+              </div>
+              <div class="card-badges">
+                <span class="badge badge-ai">AI 搜尋</span>
+                <span class="badge badge-hero">產品即頁面</span>
+              </div>
+              <div class="color-palette">
+                <span class="color-swatch" style="background:#1C1C28;"></span>
+                <span class="color-swatch" style="background:#20B2D4;"></span>
+                <span class="color-swatch" style="background:#FFFFFF;"></span>
+                <span class="palette-label">深暗藍 · 青色品牌</span>
+              </div>
+              <div class="card-insight">
+                <div class="insight-label">核心決策</div>
+                <div class="insight-text">主頁就是產品本身——全螢幕搜索框，幾乎無行銷內容。Google 式「單一工具」心智：「一用就懂，不需解釋。」風險高但體驗出色時極其有效。</div>
+              </div>
+              <div class="card-meta">
+                <span class="meta-chip">Ask anything</span>
+                <span class="meta-chip">Perplexity Pages</span>
+                <span class="meta-chip">AI 搜尋第一品牌</span>
+              </div>
+              <div class="card-footer">
+                <span class="card-cro">策略：<strong>零轉換摩擦，即時使用</strong></span>
+                <span class="card-link-icon">↗</span>
+              </div>
+            </a>
+
+            <!-- 12 Anthropic -->
+            <a href="https://anthropic.com" target="_blank" rel="noopener"
+               class="site-card" data-category="ai"
+               style="--card-accent: #E8865A;">
+              <div class="card-header">
+                <div class="card-identity">
+                  <div class="site-logo" style="background:#FAF7F0; color:#E8865A; font-family: var(--font-heading); font-size:1.1rem; font-weight:400;">A</div>
+                  <div class="site-name-wrap">
+                    <div class="site-name">Anthropic</div>
+                    <div class="site-url">anthropic.com</div>
+                  </div>
+                </div>
+              </div>
+              <div class="card-badges">
+                <span class="badge badge-ai">AI 研究</span>
+                <span class="badge badge-hero">聲明型 Hero</span>
+              </div>
+              <div class="color-palette">
+                <span class="color-swatch" style="background:#FAF7F0;"></span>
+                <span class="color-swatch" style="background:#E8865A;"></span>
+                <span class="color-swatch" style="background:#1A1A1A;"></span>
+                <span class="palette-label">奶油白 · 珊瑚橘 Claude 色</span>
+              </div>
+              <div class="card-insight">
+                <div class="insight-label">核心決策</div>
+                <div class="insight-text">「AI 安全研究機構」而非「AI 工具公司」——官網建立機構公信力，對話投資者/人才/監管機構。Anthropic 與 Claude 雙品牌分離策略在 AI 業界罕見且有效。</div>
+              </div>
+              <div class="card-meta">
+                <span class="meta-chip">Tiempos Serif</span>
+                <span class="meta-chip">Claude 品牌分離</span>
+                <span class="meta-chip">NASA 合作里程碑</span>
+              </div>
+              <div class="card-footer">
+                <span class="card-cro">受眾：<strong>研究者 + 企業客戶</strong></span>
+                <span class="card-link-icon">↗</span>
+              </div>
+            </a>
+
+          </div><!-- /grid-core -->
+        </section>
+
+        <!-- Discovered Sites Section (filled by scheduled task) -->
+        <section class="discoveries-section" id="discoveries-section">
+          <div class="discoveries-header">
+            <span class="discoveries-title">// 自動發現 · Auto Discoveries</span>
+            <span class="live-badge">
+              <span class="badge-dot"></span>
+              SCHEDULED · 每 10 分鐘更新
+            </span>
+          </div>
+          <div class="websites-grid" id="grid-discoveries">
+            <!-- Scheduled task will inject new site cards here -->
+            <div style="grid-column:1/-1; text-align:center; padding:60px 0; color: var(--text-muted); font-family: var(--font-mono); font-size:0.8rem;">
+              等待第一次自動掃描... ⟳
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <!-- FOOTER -->
+    <footer>
+      <div class="container">
+        <p class="footer-text">
+          AETHER WEB BRAIN v1 · 建立者：<em>Ahan & 小P</em> · 2026-05-04 ·
+          <em id="footer-count">31</em> 個網站 · 5,718 行研究筆記
+        </p>
+      </div>
+    </footer>
+  </div><!-- /page-wrap -->
+
+  <script>
+    // ============================
+    // NAV SCROLL EFFECT
+    // ============================
+    const nav = document.getElementById('nav');
+    window.addEventListener('scroll', () => {
+      nav.classList.toggle('scrolled', window.scrollY > 20);
+    }, { passive: true });
+
+    // ============================
+    // LAST UPDATED
+    // ============================
+    const updateEl = document.getElementById('last-update');
+    const now = new Date();
+    updateEl.textContent = `更新：${now.toLocaleTimeString('zh-TW', {hour:'2-digit',minute:'2-digit'})}`;
+
+    // ============================
+    // FILTER
+    // ============================
+    const filterBtns = document.querySelectorAll('.filter-btn');
+    const cards = document.querySelectorAll('#grid-core .site-card');
+    const filteredCountEl = document.getElementById('filtered-count');
+
+    filterBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        filterBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        const filter = btn.dataset.filter;
+        let visible = 0;
+
+        cards.forEach(card => {
+          const cat = card.dataset.category;
+          const show = filter === 'all' || cat === filter;
+          card.classList.toggle('hidden', !show);
+          if (show) visible++;
+        });
+
+        filteredCountEl.textContent = visible;
+      });
+    });
+
+    // ============================
+    // UPDATE TOTAL COUNT
+    // ============================
+    function updateCounts() {
+      const total = document.querySelectorAll('.site-card').length;
+      document.getElementById('total-count').textContent = total;
+      document.getElementById('footer-count').textContent = total;
+      document.getElementById('filtered-count').textContent = total;
+    }
+
+    // ============================
+    // INJECT NEW SITE CARD (called by scheduled task updates)
+    // Format: window.injectSite({ name, url, category, logoText, logoBg, logoColor,
+    //          accentColor, palette, hero_type, insight, tags, cro_note })
+    // ============================
+    window.injectSite = function(s) {
+      const grid = document.getElementById('grid-discoveries');
+
+      // Remove placeholder
+      const placeholder = grid.querySelector('div[style]');
+      if (placeholder) placeholder.remove();
+
+      const cat = s.category || 'saas';
+      const badgeClass = {saas:'badge-saas', dtc:'badge-dtc', ai:'badge-ai', creative:'badge-creative'}[cat] || 'badge-saas';
+      const catLabel = {saas:'SaaS', dtc:'DTC 電商', ai:'AI 產品', creative:'創意/品牌'}[cat] || 'SaaS';
+
+      const swatches = (s.palette || []).map(c =>
+        `<span class="color-swatch" style="background:${c};"></span>`
+      ).join('');
+
+      const chips = (s.tags || []).map(t =>
+        `<span class="meta-chip">${t}</span>`
+      ).join('');
+
+      const card = document.createElement('a');
+      card.href = s.url || '#';
+      card.target = '_blank';
+      card.rel = 'noopener';
+      card.className = 'site-card';
+      card.dataset.category = cat;
+      card.style.cssText = `--card-accent: ${s.accentColor || '#C9A96E'};`;
+
+      card.innerHTML = `
+        <span class="card-new-tag">✦ NEW</span>
+        <div class="card-header">
+          <div class="card-identity">
+            <div class="site-logo" style="background:${s.logoBg||'#13131F'}; color:${s.logoColor||'#C9A96E'}; font-family: var(--font-mono); font-size:0.75rem;">${s.logoText || s.name.substring(0,2).toUpperCase()}</div>
+            <div class="site-name-wrap">
+              <div class="site-name">${s.name}</div>
+              <div class="site-url">${(s.url||'').replace(/^https?:\/\//, '')}</div>
+            </div>
+          </div>
+        </div>
+        <div class="card-badges">
+          <span class="badge ${badgeClass}">${catLabel}</span>
+          ${s.hero_type ? `<span class="badge badge-hero">${s.hero_type}</span>` : ''}
+        </div>
+        <div class="color-palette">${swatches}<span class="palette-label">${s.paletteLabel || ''}</span></div>
+        <div class="card-insight">
+          <div class="insight-label">核心決策</div>
+          <div class="insight-text">${s.insight || ''}</div>
+        </div>
+        <div class="card-meta">${chips}</div>
+        <div class="card-footer">
+          <span class="card-cro">${s.cro_note ? `發現：<strong>${s.cro_note}</strong>` : ''}</span>
+          <span class="card-link-icon">↗</span>
+        </div>
+      `;
+
+      grid.appendChild(card);
+      updateCounts();
+    };
+
+    // ============================
+    // AUTO-DISCOVERED SITES PLACEHOLDER
+    // Will be populated by the scheduled task injection script
+    // ============================
+    // SCHEDULED_INJECT_START
+
+    // ── Agent 1：設計社群公認頂尖 (Awwwards / CSS Design Awards) ──
+    window.injectSite({ name:"Igloo Inc", url:"https://www.igloo.inc/", category:"creative", logoText:"❄", logoBg:"#070C18", logoColor:"#A0CBE8", accentColor:"#A0CBE8", palette:["#070C18","#A0CBE8","#E5F2FF"], paletteLabel:"北極冰藍 · 深夜宇宙", hero_type:"WebGL 全UI渲染", insight:"整個 UI 在 WebGL 內渲染而非 HTML，冰晶以程序演算法模擬結晶生長。hover 觸發極光暈圈，chromatic aberration 與霜凍溶解轉場強化「冰冷精緻」調性，罕見將 shader 驅動 UI 應用於企業首頁。", tags:["WebGL全UI渲染","程序冰晶生成","Three.js+Svelte"], cro_note:"Awwwards 年度最佳 2024 · 技術即品牌" });
+
+    window.injectSite({ name:"Lando Norris", url:"https://landonorris.com/", category:"creative", logoText:"LN", logoBg:"#FF8000", logoColor:"#0A0A0A", accentColor:"#FF8000", palette:["#FF8000","#0A0A0A","#FFFFFF"], paletteLabel:"McLaren 橘 · 碳黑高對比", hero_type:"電影級全屏動態開場", insight:"以 F1 賽道速度作為設計語系核心隱喻，GSAP 驅動的轉場在章節間製造「過彎」動態節奏。McLaren 橘與碳黑高對比配色完整繼承賽車識別，動畫全程服務於品牌敘事而非純視覺裝飾。", tags:["GSAP速度感轉場","運動員個人品牌","WebGL電影語言"], cro_note:"Awwwards 年度最佳 2025 · 粉絲旅程賽車化" });
+
+    window.injectSite({ name:"Dropbox Brand", url:"https://brand.dropbox.com/", category:"saas", logoText:"DB", logoBg:"#0061FF", logoColor:"#FFFFFF", accentColor:"#0061FF", palette:["#0061FF","#FAFAFA","#1E1919"], paletteLabel:"Dropbox 藍 · 清爽白底", hero_type:"互動 Tile 玩具箱", insight:"打破傳統品牌規範靜態文件形式，以「玩具箱」隱喻重構品牌探索體驗。每個 tile 具備 hover 動畫預覽，Variable Type Explorer 讓設計師即時操控字型變數，用 Rive 實現所有互動（無框架）。", tags:["Rive互動動畫","無框架純JS/CSS","品牌指南遊戲化"], cro_note:"CSS Design Awards WOTY 2025 · 品牌規範從文件變工具" });
+
+    window.injectSite({ name:"Symphony of Vines", url:"https://symphonyofvines.unseen.co/", category:"dtc", logoText:"SV", logoBg:"#7A1A2A","logoColor":"#D5B08C", accentColor:"#D5B08C", palette:["#D5B08C","#000000","#7A1A2A"], paletteLabel:"暖沙金 · 波爾多紅 · 深黑", hero_type:"Scroll 觸發千年旅程", insight:"以 Theatre.js 編排電影級攝影機運動，Three.js 渲染跨越千年的葡萄園場景，整合空間音效創造多感官體驗。將「時間」作為導航軸線，滾動即是穿越歷史，賦予葡萄酒品牌史詩感。", tags:["Theatre.js攝影機","空間音效設計","時間軸導航"], cro_note:"CSS Design Awards WOTY 2025 第2 · 電影語言提升客單價" });
+
+    window.injectSite({ name:"Charles Leclerc", url:"https://charlesleclerc.com/", category:"creative", logoText:"CL", logoBg:"#0A0A0A", logoColor:"#C8A84B", accentColor:"#C8A84B", palette:["#0A0A0A","#F0F0F0","#C8A84B"], paletteLabel:"碳黑 · 香檳金 · 白", hero_type:"生成式品牌識別 Hero", insight:"棋盤格旗幟是整個視覺系統的生成邏輯：CL16 字符印記由「L」與「1」在棋格旋轉中交織而成。定製字體 Leclerc Sans 的三角切割細節將速度注入每個字母，超越車隊識別建立獨立個人 IP。", tags:["定製字體Leclerc-Sans","生成式品牌識別","F1賽道頁面架構"], cro_note:"CSS Design Awards WOTY 2025 第3 · 個人IP商業溢價" });
+
+    // ── Agent 2：新一代 SaaS 設計標杆 ──
+    window.injectSite({ name:"Raycast", url:"https://raycast.com", category:"saas", logoText:"⌘", logoBg:"#18171C", logoColor:"#FF4500", accentColor:"#FF4500", palette:["#18171C","#FF4500","#BF5AF2"], paletteLabel:"深黑 · 橙紅 · 品牌紫", hero_type:"產品即 Hero", insight:"深暗背景托起浮動 UI 截圖，品牌漸層從橙至紫成為設計社群截圖素材。2025 年轉向粗放紅色加噪點材質，滾動觸發 3D 透視讓工具截圖化身藝術裝置，設計本身即最佳傳播媒介。", tags:["暗色品牌漸層","浮動UI截圖","3D滾動視差"], cro_note:"把生產力工具做成值得截圖的藝術品，用戶自發傳播" });
+
+    window.injectSite({ name:"Resend", url:"https://resend.com", category:"saas", logoText:"RE", logoBg:"#080808", logoColor:"#E5462A", accentColor:"#E5462A", palette:["#080808","#F5F5F5","#E5462A"], paletteLabel:"近黑 · 白 · 品牌紅", hero_type:"聲明型 Hero", insight:"2025 年大改版引入 Domaine 襯線字型與 3D 物理材質紋理，將 email API 翻譯成有重量感的實體物件。以程式碼片段取代功能列表，開發者一眼讀懂產品本質，OnePageLove 收錄。", tags:["Serif字型反差","3D物理材質","極簡開發者美學"], cro_note:"用物理性對抗數位虛無，API 文件也有重量感" });
+
+    window.injectSite({ name:"Supabase", url:"https://supabase.com", category:"saas", logoText:"SB", logoBg:"#0F0F0F", logoColor:"#3ECF8E", accentColor:"#3ECF8E", palette:["#0F0F0F","#3ECF8E","#171717"], paletteLabel:"深黑 · 祖母綠品牌色", hero_type:"聲明型 Hero", insight:"深黑底搭配識別度極高的祖母綠，設計語言從終端機進化至行銷頁面而不失本色。刻意捨棄陰影改以邊框層次建立深度，Circular 字型與圓角藥丸 CTA 傳遞「精準但不冷酷」的開發者氣質。", tags:["Terminal美學進化","無陰影邊框系統","祖母綠品牌識別"], cro_note:"一個 #3ECF8E 讓全球開發者秒認品牌" });
+
+    window.injectSite({ name:"Liveblocks", url:"https://liveblocks.io", category:"saas", logoText:"LB", logoBg:"#0F0E14", logoColor:"#6553C0", accentColor:"#6553C0", palette:["#0F0E14","#6553C0","#4FAAFF"], paletteLabel:"深紫黑 · 紫 · 藍", hero_type:"產品即 Hero", insight:"Hero 區嵌入可互動多人協作 3D 小遊戲，讓「即時協作」從文字承諾化為親身體驗。深紫暗色頁面以多色游標殘影傳達多使用者概念，技術複雜性以遊戲形式消解，Lapa Ninja 多次收錄。", tags:["互動式Hero遊戲","多人游標視覺化","暗紫漸層系統"], cro_note:"不用一個字解釋協作功能，直接讓訪客在 Hero 裡體驗" });
+
+    window.injectSite({ name:"Framer", url:"https://framer.com", category:"saas", logoText:"Fr", logoBg:"#0B0B0D", logoColor:"#1260E8", accentColor:"#1260E8", palette:["#0B0B0D","#1260E8","#FFFFFF"], paletteLabel:"深黑 · Framer 藍 · 白", hero_type:"產品即 Hero", insight:"以自身工具建造官網，滾動觸發動效、模板輪播與嵌入互動原型均為默默運作的產品 Demo。設計密度高但不堆砌，Awwwards 多次收錄，兼具設計說服力與功能展示效率。", tags:["自建工具示範","滾動觸發動效","互動原型嵌入"], cro_note:"整個官網即 Framer 互動型錄，造訪即體驗" });
+
+    // ── Agent 3：獨立精品品牌 ──
+    window.injectSite({ name:"Aesop", url:"https://www.aesop.com", category:"dtc", logoText:"Æ", logoBg:"#3B2A1A", logoColor:"#F2EBD9", accentColor:"#8C7B65", palette:["#F2EBD9","#3B2A1A","#8C7B65"], paletteLabel:"暖奶油 · 濃深棕 · 大地色", hero_type:"全螢幕靜物攝影", insight:"以 Optima 字型、暖奶油底色與濃郁深棕構成哲學式克制感。文案比大多品牌整個網站更有深度，將護膚品包裝為知識型生活方式。模組設計系統確保全球子站高度一致，是「留白即表達」的教科書案例。", tags:["極簡主義","排版驅動","品牌敘事"], cro_note:"護膚網站的文案比大多品牌整個官網更有深度" });
+
+    window.injectSite({ name:"Maison Margiela", url:"https://www.maisonmargiela.com", category:"dtc", logoText:"MM", logoBg:"#1C1B19", logoColor:"#FFFFFF", accentColor:"#C8C0B4", palette:["#FFFFFF","#F5F4EF","#1C1B19"], paletteLabel:"純白 · 米白 · 碳黑", hero_type:"全螢幕時裝影片", insight:"解構主義精神延伸至數位介面——空白標籤轉化為大量留白與匿名排版，刻意抹除品牌存在感。導航隱約，意圖曖昧，卻精確傳遞反時尚哲學。把「沒有品牌」做成最強烈的品牌聲明。", tags:["解構美學","反品牌設計","概念優先"], cro_note:"「沒有品牌」即最強品牌聲明" });
+
+    window.injectSite({ name:"MSCHF", url:"https://mschf.com", category:"creative", logoText:"M!", logoBg:"#000000", logoColor:"#FF1F00", accentColor:"#FF1F00", palette:["#000000","#FF1F00","#F5F5F5"], paletteLabel:"純黑 · 暴力紅 · 白", hero_type:"互動式 Drop 頁面", insight:"沒有固定品牌識別——每次 drop 都是獨立域名與全新視覺宇宙，有時超現實，有時企業諷刺。將設計視為行為藝術，沒有 logo 只有觀點，是研究「品牌即概念」最重要的當代案例。", tags:["互動藝術","Drop設計","品牌顛覆"], cro_note:"每次 drop 都重新發明自己" });
+
+    window.injectSite({ name:"SSENSE", url:"https://www.ssense.com", category:"dtc", logoText:"SS", logoBg:"#000000", logoColor:"#FFFFFF", accentColor:"#888888", palette:["#000000","#FFFFFF","#F5F5F5"], paletteLabel:"純黑白 · 編輯美學", hero_type:"全螢幕編輯攝影", insight:"奢侈品電商罕見的「編輯優先」策略——首頁呈現文化內容而非商品。極度克制的黑白排版讓產品照片色彩更突出，將時尚媒體邏輯植入電商體驗，Product Page 資訊層次清晰。", tags:["編輯優先","黑白美學","精品電商"], cro_note:"用文化媒體邏輯重新定義精品電商首頁" });
+
+    window.injectSite({ name:"Le Labo", url:"https://www.lelabofragrances.com", category:"dtc", logoText:"LL", logoBg:"#2A1F18", logoColor:"#EDE3CC", accentColor:"#9B8B74", palette:["#EDE3CC","#2A1F18","#9B8B74"], paletteLabel:"牛皮紙米黃 · 深棕 · 大地", hero_type:"工坊產品特寫", insight:"工匠藥房美學的數位化實踐。牛皮紙色調、手寫標籤視覺語言與打字機字型，在螢幕上重現親手調製香水的儀式感。刻意迴避光滑奢華感，以誠實親密的感性取而代之。", tags:["工匠感","類比美學","感官敘事"], cro_note:"讓數位介面散發出牛皮紙與鉛筆的氣息" });
+
+    // ── Agent 4：頂尖互動動畫網站 ──
+    window.injectSite({ name:"Bruno Simon", url:"https://bruno-simon.com", category:"creative", logoText:"BS", logoBg:"#2E3440", logoColor:"#5CCFE6", accentColor:"#5CCFE6", palette:["#5CCFE6","#2E3440","#A3BE8C"], paletteLabel:"霓虹青 · 北歐夜藍 · 草綠", hero_type:"可駕車 3D 遊戲世界", insight:"以遊戲化思維重新定義作品集，Three.js 打造可駕車探索的 3D 世界。動畫即敘事本體，非純裝飾。空間音效配合方位感設計，沉浸感無可比擬，是 WebGL 創意開發的標竿之作。需獨顯。", tags:["Three.js","3D互動","遊戲化敘事"], cro_note:"作品集本身即 Three.js 技術能力最強展示 · 需獨顯" });
+
+    window.injectSite({ name:"Lusion", url:"https://lusion.co", category:"creative", logoText:"Lu", logoBg:"#060606", logoColor:"#7B2FBE", accentColor:"#00C9FF", palette:["#060606","#7B2FBE","#00C9FF"], paletteLabel:"近黑 · 深紫 · 霓虹青", hero_type:"即時回應滑鼠的 3D 抽象環境", insight:"WebGL 工作室的自我展示，3D 抽象環境即時回應滑鼠，滾動時場景流暢形變揭示作品。榮獲 Awwwards 2023 年度網站（9.4 分），每幀動畫強化「數位工藝」品牌精神，而非單純視覺炫技。需獨顯。", tags:["WebGL","Awwwards年度","GLSL Shaders"], cro_note:"Awwwards 2023 年度網站 9.4 分 · 需獨顯" });
+
+    window.injectSite({ name:"Basement Studio", url:"https://basement.studio", category:"creative", logoText:"▮▮", logoBg:"#0D0D0D", logoColor:"#FF3C3C", accentColor:"#FF3C3C", palette:["#0D0D0D","#F0EEE9","#FF3C3C"], paletteLabel:"深黑 · 米白 · 暴力紅", hero_type:"滾動敘事動效", insight:"以 GSAP + Next.js 打造高效滾動敘事，自製開源 Scrollytelling 庫讓動畫與 React 無縫整合。客戶含 Vercel、Cursor，動畫邏輯清晰可讀，是學習 GSAP ScrollTrigger 最實際的參考案例。效能優先，不需獨顯。", tags:["GSAP","ScrollTrigger","效能優先"], cro_note:"Vercel / Cursor 御用工作室 · 純 GSAP 流暢跑" });
+
+    window.injectSite({ name:"Active Theory", url:"https://activetheory.net", category:"creative", logoText:"AT", logoBg:"#0A0A14", logoColor:"#1A6FFF", accentColor:"#FF3366", palette:["#0A0A14","#1A6FFF","#FF3366"], paletteLabel:"深夜藍黑 · 電藍 · 霓虹紅", hero_type:"自研引擎粒子沉浸環境", insight:"以自研 Hydra WebGL 引擎驅動粒子系統、AI 導航與沉浸 3D 環境，作品集即產品 Demo。針對 CPU 使用率深度優化，穩定輸出 60fps，是 WebGL 效能工程的標竿。需獨顯。", tags:["自研Hydra引擎","WebGPU","沉浸體驗"], cro_note:"自研引擎深度優化 60fps · 需獨顯" });
+
+    window.injectSite({ name:"Mercury", url:"https://mercury.com", category:"saas", logoText:"M", logoBg:"#272735", logoColor:"#F2F0EA", accentColor:"#272735", palette:["#272735","#535461","#F2F0EA"], paletteLabel:"深紫黑 · 霧石灰 · 奶油白", hero_type:"全寬產品截圖 + 創辦人語言", insight:"Mercury 以深紫黑為底，刻意抹去傳統銀行的信任徽章，改以創辦人語言建立連結：燒錢率、跑道、創投債。Hero 直接展示產品 UI，無模特兒無生活照，「10 分鐘開戶」打破金融服務門檻認知。極度自律的視覺讓產品成為品牌本身，是 B2B 設計去裝飾化的標竿。", tags:["創辦人語言", "深色精緻", "產品即品牌"], cro_note:"單 CTA 開戶 · Best SMB Banking 2023 · 無摩擦轉換" });
+
+    window.injectSite({ name:"Plaid", url:"https://plaid.com", category:"saas", logoText:"PL", logoBg:"#00172E", logoColor:"#42F0CD", accentColor:"#42F0CD", palette:["#00172E","#42F0CD","#156EF5"], paletteLabel:"深海軍藍 · 霓虹薄荷 · 電光藍", hero_type:"班傑明富蘭克林插圖 + hover 眨眼微互動", insight:"Plaid 以班傑明・富蘭克林持 iPhone 作 Hero，讓傳統金融符號碰撞現代科技，製造瞬間記憶點。Hover CTA 時富蘭克林眨眼，這個微互動讓 B2B 平台具有人格。自創字型 Cern 搭配霓虹薄荷多色系，徹底打破 B2B 金融配色慣例，設計大膽卻不失嚴謹。", tags:["插圖記憶點", "hover眨眼互動", "開放金融API"], cro_note:"開發者 + 企業雙軌 CTA · 速度是核心承諾" });
+
+    window.injectSite({ name:"Ramp", url:"https://ramp.com", category:"saas", logoText:"Ra", logoBg:"#0066FF", logoColor:"#FFFFFF", accentColor:"#0066FF", palette:["#0066FF","#f6fab2","#F4F2F0"], paletteLabel:"電光藍 · 鮮黃綠 · 暖米白", hero_type:"AI 即時數字計數器 + 大字標題", insight:"Ramp 的 Hero 嵌入即時動態計數器顯示當前美國企業支付佔比，讓數據成為動態設計元素而非靜態說明。「banking - in the blink of AI」宣示 AI 立場，入場門檻極低：只需一個 email 輸入框。鮮黃綠在奶油白底色中製造強烈視覺記憶，是數據驅動 Hero 設計的模板案例。", tags:["即時數據英雄", "AI優先定位", "極短轉換路徑"], cro_note:"50,000 企業 · 成長速度 3.2x 社會認同 · email 即開始" });
+
+    window.injectSite({ name:"Rippling", url:"https://rippling.com", category:"saas", logoText:"Rip", logoBg:"#4A0039", logoColor:"#03DBB4", accentColor:"#03DBB4", palette:["#4A0039","#03DBB4","#F2EEEB"], paletteLabel:"深品紅 · 霓虹薄荷 · 暖米白", hero_type:"Wavemakers 品牌影片 + 系統圖示動畫", insight:"Rippling 的品牌雙色系——深品紅搭霓虹薄荷——在企業 HR 軟體中極為反常，卻製造強烈識別感。Hero 以「Meet the wavemakers」取代功能列表，用顧客故事開場再展示統一數據平台架構。大膽配色源自四個月閃電內部重塑，是企業 SaaS 敢於打破品類常規的罕見案例。", tags:["雙色強對比", "Wavemaker品牌敘事", "HR+IT+Finance合一"], cro_note:"模組化入場 · 統一 OS 訴求 · 四個月閃電重塑" });
+
+    // ── Agent 5：開發者工具新星 (Direction B) ──
+    window.injectSite({ name:"Warp", url:"https://www.warp.dev/", category:"saas", logoText:"W▸", logoBg:"#0C0C10", logoColor:"#D97757", accentColor:"#D97757", palette:["#0C0C10","#D97757","#00C2D1"], paletteLabel:"深黑 · 赤陶橙 · 電光青", hero_type:"Agentic Terminal 三層產品卡堆疊", insight:"2024年底品牌重塑，Warp 從「現代終端機」蛻變為「Agentic Development Environment」。Hero 以垂直堆疊的 Terminal / Agents / Orchestration 三層產品卡傳達整合平台概念。赤陶橙在開發者工具慣用藍綠配色市場中製造強烈反差，深黑底色托起浮動 UI 截圖，JetBrains Mono + Inter 雙字型系統兼顧終端美學與行銷清晰度，開源宣告進一步建立社群信任。", tags:["Agentic平台重塑","赤陶橙品牌突破","開源加速採用"], cro_note:"700K+ 開發者 · 企業 AI 工作流入口 · Claude Code 原生支援" });
+
+    window.injectSite({ name:"Zed", url:"https://zed.dev/", category:"saas", logoText:"Zed", logoBg:"#121212", logoColor:"#335CFF", accentColor:"#335CFF", palette:["#121212","#335CFF","#F5F5F5"], paletteLabel:"近黑 · 銦藍 · 純白", hero_type:"極簡聲明型 + 直接下載 CTA", insight:"「Your last next editor」一句話宣告設計野心。Zed 以 Rust 從零打造，spring 物理彈性過渡動畫讓介面有「重量感」，Primary 藍 hsl(228°,100%,60%) 在深黑底上如螢光筆劃。Fast / Agentic / Collaborative 三柱設計哲學對應 post-Figma 協作編輯工具時代的核心命題，Hero 直接「Download now」無中間層，是 IDE 視覺語言的新基準。", tags:["Rust原生性能","Spring彈性動畫","三柱設計哲學"], cro_note:"macOS/Linux/Windows 全平台 · 直接下載無摩擦 · 平行代理人編輯" });
+
+    window.injectSite({ name:"Neon", url:"https://neon.com/", category:"saas", logoText:"Ne", logoBg:"#0A0A0A", logoColor:"#00E599", accentColor:"#00E599", palette:["#0A0A0A","#00E599","#1C1C1C"], paletteLabel:"純黑 · 霓虹綠 · 深灰", hero_type:"系統狀態終端面板 + CLI 入場 Hero", insight:"Neon 以「SYSTEM: NEON DATABASE PLATFORM [ STATUS: ONLINE ]」終端機系統面板作為視覺語言，賦予 Postgres 服務控制室質感。#00E599 霓虹綠在純黑底幾乎自帶發光效果，成為設計社群截圖素材。git-like 資料庫分支隱喻與「npx neonctl init」單命令 Hero 入場，將技術複雜性極度壓縮。作為 Databricks 旗下公司，品牌在企業可信度與駭客質感之間取得精準平衡。", tags:["系統面板美學","霓虹綠識別符","git分支隱喻"], cro_note:"Databricks旗下 · 21.8k Discord社群 · AI Agent 基礎設施首選" });
+
+    // ── Agent 5：創意代理商新星 (Direction C) ──
+    window.injectSite({ name:"Instrument", url:"https://www.instrument.com/", category:"creative", logoText:"Ins", logoBg:"#0A0A0A", logoColor:"#FFFFFF", accentColor:"#FF3D00", palette:["#0A0A0A","#FFFFFF","#FF3D00"], paletteLabel:"純黑 · 白 · 暴力橙", hero_type:"動態作品輪播 + Variable Font Hero", insight:"Instrument 以可變字型（Variable Font）在 Hero 區域製造尺度戲劇感，字重在 100–900 之間流暢動畫過渡。暗色全螢幕背景讓作品截圖色彩高度突出，hover 微互動揭示客戶名稱的設計讓瀏覽本身成為品牌體驗。服務 Google / Apple / Nike 的頂尖代理商以極簡黑底傳遞「我們是幕後建造者」的謙遜自信。", tags:["Variable Font動畫","暗色作品輪播","幕後建造者定位"], cro_note:"Google/Apple/Nike 御用 · 技術驅動創意代理商" });
+
+    // ── Agent 6：頂尖食品/飲料 DTC (Direction D) ──
+    window.injectSite({ name:"Graza", url:"https://graza.co/", category:"dtc", logoText:"Gra", logoBg:"#1B3A1E", logoColor:"#C4E231", accentColor:"#C4E231", palette:["#1B3A1E","#C4E231","#F2E1C8"], paletteLabel:"森林綠 · 霓虹萊姆 · 暖沙米", hero_type:"全螢幕影片 Hero + 萊姆綠 CTA", insight:"Gander 設計的品牌識別以手繪插畫與滿版廚房使用影片建立「日常工具」而非「精品油」的平民定位。霓虹萊姆綠 CTA 在沙米底上極度搶眼。「Drizzle on everything」的 Copy 語言讓產品脫離精英消費敘事，Drizzle / Sizzle 雙瓶型對應兩種烹飪場景，是 DTC 食品類突圍的教科書範本。", tags:["手繪插畫系","影片Hero敘事","平民工藝定位"], cro_note:"Drizzle/Sizzle 雙產品線分流不同用途 · 萊姆綠單一 CTA 減少決策摩擦" });
+
+    window.injectSite({ name:"Ghia", url:"https://drinkghia.com/", category:"dtc", logoText:"Ghia", logoBg:"#2E1A15", logoColor:"#F5EDD6", accentColor:"#C8522A", palette:["#2E1A15","#C8522A","#F5EDD6"], paletteLabel:"深酒紅 · 磚橘 · 奶油白", hero_type:"地中海靜物攝影 + 後現代版式 Hero", insight:"創辦人 Melanie Masarin（前 Glossier）以後現代義大利設計語言重新定義「無酒精」消費體驗。FHA Condensed French 字型讓品牌同時散發舊歐洲海報感與當代高端時尚。配色克制於大地暖色系，食譜頁與調酒文化敘事讓品牌顯得豐盛——maximalist 的精準定義：不是視覺雜亂，而是內容密度。", tags:["義大利後現代美學","無酒精文化再定義","食譜內容策略"], cro_note:"Instagram 起家品牌 · 食譜嵌入 Product 頁增加停留時長 · 用戶評論視覺突出" });
+
+    window.injectSite({ name:"Magic Spoon", url:"https://magicspoon.com/", category:"dtc", logoText:"MS", logoBg:"#1A0533", logoColor:"#FFD166", accentColor:"#FFD166", palette:["#1A0533","#FFD166","#FF8EC4"], paletteLabel:"魔法深紫 · 蜂蜜黃 · 棉花糖粉", hero_type:"3D 麥片動畫旋轉 + 懷舊插畫 Hero", insight:"以「大人版彩色麥片」重奪懷舊食品話語權，設計語言刻意童趣卻完全面向成人健康消費者。Gander 操刀的品牌以漸層軟糖色系製造「魔法入口」，hover 懸停顯示成分的微互動避免產品頁資訊過載。「Build Your Own Bundle」頁面經 A/B 測試驗證為最高轉換路徑，成為 DTC 電商 CRO 教材等級的案例。", tags:["懷舊重製美學","漸層軟糖色系","Bundle客製優化"], cro_note:"A/B 測試驗證 Build-Bundle 為最高轉換頁 · hover 成分預覽降低購買摩擦" });
+
+    // ── Agent 7：AI 工具新星 + 健康科技 (Direction J + E) ──
+    window.injectSite({ name:"Cursor", url:"https://cursor.com", category:"ai", logoText:"⌽", logoBg:"#0D0D0D", logoColor:"#FFFFFF", accentColor:"#8566BE", palette:["#0D0D0D","#FFFFFF","#8566BE"], paletteLabel:"近黑 · 純白 · 霧紫", hero_type:"全黑底動態補全演示 + 大字宣言", insight:"Cursor 以「The AI Code Editor」一行宣言奪取螢幕。Hero 動畫直接展示 Tab 補全的瞬間，讓功能本身替代所有行銷文字。不用任何彩色裝飾，視覺極度克制，反而讓 AI 補全的流暢感成為唯一焦點。深黑底色讓編輯器截圖在視覺層次中自然浮現，是「產品即廣告」邏輯的教科書執行。", tags:["極簡AI宣言","功能即廣告","深黑底代碼美學"], cro_note:"直接試用無門檻 · 開發者口碑驅動 · Tab 補全演示秒轉化" });
+
+    window.injectSite({ name:"Modal", url:"https://modal.com", category:"ai", logoText:"Mo", logoBg:"#0A0A0A", logoColor:"#F5F5F5", accentColor:"#F5A623", palette:["#0A0A0A","#F5F5F5","#F5A623"], paletteLabel:"純黑 · 霧白 · 琥珀黃", hero_type:"代碼裝飾器 Hero + 零配置訴求", insight:"Modal 以 @app.function() 單行 Python 裝飾器作為整個 Hero 設計核心——一行程式碼取代所有功能說明。接近純黑白的配色讓代碼成為唯一視覺主角，無行銷噪音。刻意拒絕任何插圖或動畫，以「程式即基礎設施」哲學實踐了開發者導向設計的極致：最少視覺傳遞最大技術信任。", tags:["代碼即Hero","零配置哲學","黑白極簡基礎設施"], cro_note:"pip install modal 即入場 · 無需 AWS 帳戶 · Serverless GPU 定價透明" });
+
+    window.injectSite({ name:"Eight Sleep", url:"https://www.eightsleep.com", category:"dtc", logoText:"8S", logoBg:"#000000", logoColor:"#FFFFFF", accentColor:"#4EAFED", palette:["#000000","#4EAFED","#FFFFFF"], paletteLabel:"純黑 · 冰藍 · 純白", hero_type:"電影感 Pod 特寫 + 生物指標 Hero", insight:"Eight Sleep 以純黑底色與冰藍燈光攝影將睡眠轉化為高性能運動裝備概念。文案對齊精英健身圈語言——恢復率、REM 時間、心率變異。Hero 是電影感 Pod 產品特寫而非人物，讓硬體本身即形象大使。「睡眠即訓練的一部分」定位策略，是 DTC 健康硬體品牌「奢華 × 數據」視覺策略的最佳範例。", tags:["電影感硬體攝影","生物指標語言","精英健康定位"], cro_note:"個人化測驗分流「Which Pod？」· 指標數據替代文案說服 · 試用優惠降低門檻" });
+
+    window.injectSite({ name:"Fly.io", url:"https://fly.io", category:"saas", logoText:"✦", logoBg:"#1D1D22", logoColor:"#A78BFA", accentColor:"#A78BFA", palette:["#1D1D22","#A78BFA","#F59E0B"], paletteLabel:"深夜藍黑 · 薰衣草紫 · 琥珀黃", hero_type:"熱氣球吉祥物 + 直接部署訴求", insight:"Fly.io 以熱氣球吉祥物打破開發者平台「無個性現代主義」慣例，品牌語言調皮而誠實。Hero 直接說「Deploy app servers close to your users」，拒絕空洞流行語。文件化是品牌戰略一部分——精心寫作的技術 blog 建立社群信任遠超廣告預算。深夜藍黑底色中薰衣草紫的浮現讓嚴肅基礎設施具有人格與溫度。", tags:["吉祥物人格化","技術部落格品牌","誠實工程師語言"], cro_note:"flyctl launch 單命令部署 · 免費起步計劃 · 開發者社群口碑主導獲客" });
+
+    // ── 方向I：高端家具/家居品牌 (Direction I) ──
+    window.injectSite({ name:"HAY", url:"https://www.hay.com", category:"dtc", logoText:"HAY", logoBg:"#000000", logoColor:"#FFFFFF", accentColor:"#D3D3D3", palette:["#000000","#FFFFFF","#D3D3D3"], paletteLabel:"純黑 · 純白 · 銀灰", hero_type:"無文字藝術書式產品網格 Hero", insight:"HAY 拒絕傳統電商英雄區，以藝術書式產品攝影網格取代所有行銷話術。官網沒有宣言文字，只有一幀幀精準打光的產品影像，彷彿藝廊展牆。導覽以平台型分類取代漏斗引導，把品牌態度本身當成最強轉換力——選擇 HAY 的人不需要被說服，只需要被看見。", tags:["藝術書式編輯美學","無文字英雄哲學","丹麥功能主義"], cro_note:"策展式產品分類降低選擇焦慮 · 設計師合作故事強化品牌縱深 · 零行銷話術建立高端信任" });
+    window.injectSite({ name:"Muuto", url:"https://www.muuto.com", category:"dtc", logoText:"Mu", logoBg:"#EFEEEB", logoColor:"#282828", accentColor:"#B7D692", palette:["#EFEEEB","#282828","#574846","#B7D692"], paletteLabel:"暖奶油 · 深炭 · 暖棕 · 鼠尾草綠", hero_type:"全幅生活場景攝影 + Spectral 古典襯線宣言", insight:"Muuto 以 Spectral 古典襯線字配北歐暖色系打破「斯堪地那維亞設計必然冷峻」刻板印象。奶油白底加鼠尾草綠點綴，讓家具網站有了文學期刊氣質。Hero 全幅生活情境照不展示規格，而是呈現居家哲學——轉換路徑藏在情感認同之後，不在價格比較之前。", tags:["古典襯線北歐美學","暖色系材質敘事","生活哲學轉換邏輯"], cro_note:"設計師故事頁深化品牌認同 · 生活情境 lookbook 驅動衝動購買 · 永續材質訴求強化長期信任" });
+    window.injectSite({ name:"Ferm Living", url:"https://fermliving.com", category:"dtc", logoText:"FL", logoBg:"#000000", logoColor:"#FCF5E5", accentColor:"#CAA472", palette:["#FCF5E5","#000000","#CAA472","#E9A189","#B1CEBC"], paletteLabel:"軟奶油 · 純黑 · 暖沙棕 · 粉磚紅 · 薄荷鼠尾草", hero_type:"季節色彩故事 Hero + 精煉鳥徽品牌入口", insight:"Ferm Living 2025 由丹麥 e-Types 主導品牌重塑：精煉的鳥徽 logo 搭配「四色核心 + 季節動態色」系統，讓每次新品上市都成為一套獨立視覺語言。字型設計刻意「曲線與銳角並存」，傳遞「可及的奢華」而非疏離感。季節色彩敘事讓用戶為新品回訪，不只為商品瀏覽。", tags:["季節色彩敘事系統","精煉品牌鳥徽符文","可及的北歐奢華"], cro_note:"季節限定色系驅動回訪 · 鳥徽符號強化品牌記憶點 · 可及奢華定位擴大受眾基礎" });
+    window.injectSite({ name:"Hem", url:"https://hem.com", category:"dtc", logoText:"Hem", logoBg:"#FFFFFF", logoColor:"#111111", accentColor:"#C8A882", palette:["#FFFFFF","#111111","#C8A882"], paletteLabel:"純白 · 深炭 · 暖沙駝", hero_type:"設計師合作焦點 + 全幅產品藝術攝影", insight:"Hem 以『Imaginative designs of obsessive quality』為宣言，把官網操作成設計師協作平台而非商品目錄。每位設計師有專屬故事頁，每件家具附帶創作意圖說明，讓購物等同於「認識一位設計師」。潔白藝廊背景讓材質細節無損呈現，暖沙駝色調點亮北歐清淡感，製造溫度記憶點。", tags:["設計師平台敘事","藝廊展示邏輯","創作意圖說明轉換"], cro_note:"設計師故事增加情感投資 · 高清細節圖降低退貨顧慮 · 獨家合作系列製造限購期待感" });
+
+    window.injectSite({ name:"The Pudding", url:"https://pudding.cool", category:"creative", logoText:"P", logoBg:"#1a1a1a", logoColor:"#f7c48e", accentColor:"#f7c48e", palette:["#f5f0e8","#1a1a1a","#f7c48e"], paletteLabel:"Cream / Dark / Gold", hero_type:"Card Grid + Scroll Narrative", insight:"Each visual essay has its own independent design language experiment. The homepage presents articles as a colorful card grid with varying hand-drawn titles and colors, creating a curated journal feel. Each article transforms into immersive full-screen scroll-driven storytelling, with D3.js and Svelte powering data visualizations as narrative backbone, not decoration.", tags:["scroll-storytelling","data-viz","editorial-curation"], cro_note:"No ads or paywall - viral article sharing is the brand strategy. Open-source viz tools build industry influence." });
+    window.injectSite({ name:"Phantom", url:"https://phantom.com", category:"saas", logoText:"Ph", logoBg:"#141118", logoColor:"#AB9FF2", accentColor:"#9945FF", palette:["#141118","#AB9FF2","#9945FF"], paletteLabel:"Night Black / Lavender / Vivid Purple", hero_type:"3D Ghost Mascot + Flowing Orb Animation", insight:"Commissioned F37 Foundry to create the Phantom typeface, redefining Web3 visual language through approachability. The ghost mascot with flowing light orbs dismantles crypto's cold image - lavender gives tech an emotional warmth. Goal: make Web3 look like a world you want to join, not a system you need to understand. User base grew 10x after rebrand.", tags:["custom-typeface","mascot-personality","Web3-humanized"], cro_note:"Mascot emotional connection reduces Web3 onboarding anxiety. Multi-chain positioning covers full ecosystem." });
+    window.injectSite({ name:"Rainbow Wallet", url:"https://rainbow.me", category:"saas", logoText:"RB", logoBg:"#0E0E0E", logoColor:"#FFFFFF", accentColor:"#4F5BD5", palette:["#0E0E0E","#4F5BD5","#FF494A"], paletteLabel:"Deep Black / Rainbow Gradient / Coral Red", hero_type:"Rainbow Gradient App Showcase + Consumer Dark Hero", insight:"Designed a crypto wallet like a TikTok or Snap consumer product - vivid rainbow gradients on deep black create striking contrast, deliberately rejecting traditional finance aesthetics. Color itself is the statement: everyone is welcome here. The UI clarity rivals CashApp, giving DeFi a consumer brand appearance and emotional appeal for the first time.", tags:["rainbow-gradient-brand","consumer-crypto","anti-finance-aesthetic"], cro_note:"iOS-first design attracts mainstream consumers. Native NFT and DeFi integration reduces conversion friction." });
+    window.injectSite({ name:"Work & Co", url:"https://work.co", category:"creative", logoText:"W&", logoBg:"#0F0F0F", logoColor:"#FFFFFF", accentColor:"#E8E8E8", palette:["#0F0F0F","#FFFFFF","#8C8C8C"], paletteLabel:"Near Black / Pure White / Mid Grey", hero_type:"Oversized Typographic Statement + Case Study Grid", insight:"The homepage has almost no brand self-introduction - just an oversized sans-serif statement followed immediately by client work. This extreme restraint communicates top-tier agency confidence: the work is the argument, no design gimmicks needed. Deep black background makes client brand colors naturally pop in case studies. Grid layout makes portfolio diversity evident at a glance.", tags:["work-is-the-brand","typographic-authority","dark-portfolio-grid"], cro_note:"Case studies detail design decisions to build trust. Client roster is the brand asset. Zero self-promotion increases high-end appeal." });
+
+    // ── 方向H：互動媒體 / 新聞網站 (Direction H) ──
+    window.injectSite({ name:"NYT Interactive", url:"https://www.nytimes.com/interactive/2025/", category:"creative", logoText:"NYT", logoBg:"#000000", logoColor:"#FFFFFF", accentColor:"#D63F2D", palette:["#000000","#FFFFFF","#D63F2D","#F7F7F3"], paletteLabel:"純黑 · 純白 · 時報紅 · 暖白", hero_type:"編輯卡片網格 + 每篇獨立視覺宇宙", insight:"NYT Interactive 以自製字型系統（NYT Cheltenham 衬線 + NYT Franklin 無衬線）建立業界最嚴格的數據視覺語言。每篇互動報導都是獨立視覺宇宙，Snow Fall 一文奠定「滾動敘事」先例並改寫數位新聞設計史。設計哲學：視覺服務真相，絕不為視覺犧牲準確性。極度克制的黑白配色讓每一個策略性用色瞬間爆發敘事能量。", tags:["自製字型系統","滾動敘事先驅","數據服務真相"], cro_note:"訂閱牆前放置互動 preview 培育信任 · Snow Fall 定義業界標準 · AR 報導延伸訂閱想像" });
+
+    window.injectSite({ name:"Bloomberg Graphics", url:"https://www.bloomberg.com/graphics", category:"creative", logoText:"BG", logoBg:"#1A1A1A", logoColor:"#FFFFFF", accentColor:"#F25E3D", palette:["#1A1A1A","#FFFFFF","#F25E3D","#5A8DEE"], paletteLabel:"深炭黑 · 白 · 彭博橘紅 · 數據藍", hero_type:"年度視覺故事卡片網格 + 每則獨立色彩宇宙", insight:"Bloomberg Graphics 20 人團隊將全球金融數據轉化為藝術級敘事媒介，刻意拒絕通用視覺模板——衛星圖像、AI 交易流程圖、3D 地圖因報導需求而各自誕生。2024–2025 年以加沙破壞衛星分析、$1 兆 AI 市場循環交易圖等作品確立「數據新聞設計頂點」地位，@BBGVisualData 擴散讓每篇設計作品都成為媒體素材。", tags:["無模板每篇獨創","衛星數據新聞","金融敘事藝術化"], cro_note:"paywall 前置高質量互動 preview · BBGVisualData 社群擴散 · 視覺深度直接驅動訂閱意願" });
+
+    window.injectSite({ name:"WaPo Graphics", url:"https://www.washingtonpost.com/graphics", category:"creative", logoText:"WP", logoBg:"#051F3E", logoColor:"#F2C94C", accentColor:"#F2C94C", palette:["#051F3E","#F2C94C","#FFFFFF","#E63946"], paletteLabel:"深海軍藍 · 金黃 · 白 · 暖紅", hero_type:"多感官互動報導 + 音效 Quiz 混合", insight:"WaPo Graphics 是主流新聞機構中最敢於在嚴肅報導中植入「娛樂感」的設計團隊：耳蟲故事嵌入互動音效、彩蛋插圖讓硬新聞具遊戲質感、搜尋欄動畫將真實社群數據融入體驗。深海軍藍搭金黃的視覺語言讓數位媒體保有報紙時代的機構權威感，同時以輕盈互動面向年輕讀者，是新聞設計中最具實驗精神的機構。", tags:["音效互動報導","新聞娛樂融合","年輕讀者設計"], cro_note:"互動 Quiz 大幅延長頁面停留時間 · 社群原生傳播設計 · 免費互動報導建立訂閱意願" });
+
+    // SCHEDULED_INJECT_END
+  </script>
+</body>
+</html>
