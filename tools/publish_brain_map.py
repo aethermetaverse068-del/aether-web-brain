@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Publish one local brain-map HTML file to this repo's GitHub Pages site.
+"""Publish allowlisted brain-map files to this repo's GitHub Pages site.
 
-The script reads only the finished HTML path you pass in. It does not read a
-data cache. A leak guard runs before any network call. Publishing uses the
-GitHub REST API with the fine-grained token in BRAIN_MAP_GH_TOKEN.
+The script reads only the files you pass in. It does not read a data cache.
+A leak guard and a filename allowlist run before any network call. Publishing
+uses the GitHub REST API with the fine-grained token in BRAIN_MAP_GH_TOKEN.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import os
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -76,6 +77,18 @@ _RULES: list[tuple[str, re.Pattern[str], object]] = [
     ("word:aether", re.compile(r"aether", re.I), None),
     ("word:reiki", re.compile(r"reiki", re.I), None),
     ("word:CASE-", re.compile(r"(?<![A-Za-z])case-", re.I), None),
+    ("word:claude", re.compile(r"claude", re.I), None),
+    ("word:fleet", re.compile(r"fleet", re.I), None),
+    ("word:cases", re.compile(r"cases", re.I), None),
+    ("word:spiritual", re.compile(r"spiritual", re.I), None),
+    ("word:internal", re.compile(r"internal", re.I), None),
+    (
+        "word:jd",
+        re.compile(r"(?<![A-Za-z0-9_])jd(?![A-Za-z0-9_])", re.I),
+        None,
+    ),
+    ("word:艦隊", re.compile(r"艦隊"), None),
+    ("word:老闆", re.compile(r"老闆"), None),
     (
         "filename:.md",
         re.compile(
@@ -181,8 +194,8 @@ def _first_match(
     return None
 
 
-def load_deny_file(path: Path) -> list[str]:
-    """Load deny tokens, one per line. Blank lines and # comments are ignored."""
+def _load_token_lines(path: Path) -> list[str]:
+    """Load one token per line. Blank lines and # comments are ignored."""
     text = path.read_text(encoding="utf-8-sig")
     tokens: list[str] = []
     seen: set[str] = set()
@@ -196,6 +209,77 @@ def load_deny_file(path: Path) -> list[str]:
         seen.add(key)
         tokens.append(token)
     return tokens
+
+
+def load_deny_file(path: Path) -> list[str]:
+    """Load deny tokens, one per line. Blank lines and # comments are ignored."""
+    return _load_token_lines(path)
+
+
+def load_allow_file(path: Path) -> list[str]:
+    """Load allowlisted filenames, one per line. Blank lines and # comments are ignored."""
+    return _load_token_lines(path)
+
+
+# Names the publisher may copy. Anything else is refused even if allowlisted.
+ALLOWED_BASENAMES = {"index.html", "brain-map.demo.json"}
+HARD_REFUSE_BASENAMES = {
+    "brain-map.json",
+    "brain-map.prev.json",
+    "supabase-snapshot.json",
+}
+HARD_REFUSE_EXTENSIONS = (".py", ".sh", ".md")
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+def filename_refusal(basename: str, allow_names: list[str]) -> str | None:
+    """Return a refusal rule, or None when this basename may be published.
+
+    Hard refusals win over the allowlist. A name must also be listed and be
+    index.html, brain-map.demo.json, or a PNG screenshot.
+    """
+    if basename in {"", ".", ".."} or "/" in basename or "\\" in basename:
+        return "filename:hard-refuse:path"
+    folded = basename.casefold()
+    if "internal" in folded:
+        return "filename:hard-refuse:internal"
+    for ext in HARD_REFUSE_EXTENSIONS:
+        if folded.endswith(ext):
+            return f"filename:hard-refuse:{ext}"
+    if folded in HARD_REFUSE_BASENAMES:
+        return f"filename:hard-refuse:{folded}"
+    allowed = {name.casefold() for name in allow_names}
+    if folded not in allowed:
+        return "filename:not-listed"
+    if folded not in ALLOWED_BASENAMES and not folded.endswith(".png"):
+        return "filename:not-allowed-set"
+    return None
+
+
+def review_filenames(
+    basenames: list[str], allow_names: list[str]
+) -> list[tuple[str, str]]:
+    """Return (rule, filename) for every basename that must not be published."""
+    refusals: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for basename in basenames:
+        folded = basename.casefold()
+        if folded in seen:
+            refusals.append(("filename:duplicate", basename))
+            continue
+        seen.add(folded)
+        rule = filename_refusal(basename, allow_names)
+        if rule is not None:
+            refusals.append((rule, basename))
+    return refusals
+
+
+def report_filename_refusals(refusals: list[tuple[str, str]]) -> None:
+    print("publish refused", file=sys.stderr)
+    for rule, filename in refusals:
+        print(f"rule: {rule}", file=sys.stderr)
+        print(f"file: {filename}", file=sys.stderr)
+    print("nothing was published", file=sys.stderr)
 
 
 def scan_html(html: str, deny_tokens: list[str] | None = None) -> list[GuardHit]:
@@ -349,10 +433,11 @@ class GitHubClient:
             )
         return parsed
 
-    def remote_html_sha(self) -> str | None:
+    def remote_blob_sha(self, repo_path: str) -> str | None:
+        quoted = urllib.parse.quote(repo_path, safe="/")
         body = self._request(
             "GET",
-            f"/contents/{HTML_PATH}?ref={BRANCH}",
+            f"/contents/{quoted}?ref={BRANCH}",
             missing_ok=True,
         )
         if body is None:
@@ -432,28 +517,35 @@ class GitHubClient:
         )
 
 
-def publish_files(token: str, html_bytes: bytes, published_bytes: bytes) -> str:
-    """Push the two brain-map files. Return 'unchanged' or the new commit sha.
+def publish_files(
+    token: str,
+    files: list[tuple[str, bytes]],
+    published_bytes: bytes,
+) -> str:
+    """Push allowlisted brain-map files. Return 'unchanged' or the new commit sha.
 
     The tree is based on the current branch tip, so every other path stays.
+    ``files`` is a list of (repo path, bytes). published.json is added here.
     """
     client = GitHubClient(token)
-    remote_sha = client.remote_html_sha()
-    if content_unchanged(html_bytes, remote_sha):
+    changed = False
+    for repo_path, data in files:
+        remote_sha = client.remote_blob_sha(repo_path)
+        if not content_unchanged(data, remote_sha):
+            changed = True
+            break
+    if not changed:
         return "unchanged"
     parent_sha, tree_sha = client.branch_head()
-    html_blob = client.create_blob(html_bytes)
-    json_blob = client.create_blob(published_bytes)
-    new_tree = client.create_tree(
-        tree_sha,
-        [(HTML_PATH, html_blob), (JSON_PATH, json_blob)],
-    )
+    entries = [(repo_path, client.create_blob(data)) for repo_path, data in files]
+    entries.append((JSON_PATH, client.create_blob(published_bytes)))
+    new_tree = client.create_tree(tree_sha, entries)
     commit_sha = client.create_commit(new_tree, parent_sha)
     client.update_branch(commit_sha)
     return commit_sha
 
 
-def _read_html(path: Path) -> tuple[bytes, str] | None:
+def _read_text_file(path: Path, label: str) -> tuple[bytes, str] | None:
     if not path.is_file():
         print(f"not a file: {path}", file=sys.stderr)
         return None
@@ -461,20 +553,40 @@ def _read_html(path: Path) -> tuple[bytes, str] | None:
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
-        print("index.html must be UTF-8", file=sys.stderr)
+        print(f"{label} must be UTF-8", file=sys.stderr)
         return None
     return data, text
+
+
+def _read_png(path: Path) -> bytes | None:
+    if not path.is_file():
+        print(f"not a file: {path}", file=sys.stderr)
+        return None
+    data = path.read_bytes()
+    if not data.startswith(PNG_MAGIC):
+        print(f"not a png: {path.name}", file=sys.stderr)
+        return None
+    return data
+
+
+def _repo_path(basename: str) -> str:
+    return f"brain-map/{basename}"
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="publish_brain_map.py",
         description=(
-            "Leak-check a single-file brain map and publish it to "
-            "brain-map/index.html on GitHub Pages."
+            "Leak-check allowlisted brain-map files and publish them under "
+            "brain-map/ on GitHub Pages."
         ),
     )
     parser.add_argument("html_path", help="Path to the generated index.html")
+    parser.add_argument(
+        "extra_paths",
+        nargs="*",
+        help="Optional brain-map.demo.json and PNG screenshots",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -484,12 +596,47 @@ def main(argv: list[str] | None = None) -> int:
         "--deny-file",
         help="Extra deny list, one token per line (not committed; applied locally)",
     )
+    parser.add_argument(
+        "--allow-file",
+        required=True,
+        help=(
+            "Allowlist of basenames, one per line. "
+            "Only index.html, brain-map.demo.json, and PNG screenshots may be listed."
+        ),
+    )
     args = parser.parse_args(argv)
 
-    loaded = _read_html(Path(args.html_path))
-    if loaded is None:
+    allow_path = Path(args.allow_file)
+    if not allow_path.is_file():
+        print(f"allow file not found: {allow_path}", file=sys.stderr)
         return 2
-    html_bytes, html_text = loaded
+    allow_names = load_allow_file(allow_path)
+
+    input_paths = [Path(args.html_path), *[Path(item) for item in args.extra_paths]]
+    basenames = [path.name for path in input_paths]
+    refusals = review_filenames(basenames, allow_names)
+    if basenames[0].casefold() != "index.html":
+        refusals.insert(0, ("filename:expected-index-html", basenames[0]))
+    if refusals:
+        report_filename_refusals(refusals)
+        return 1
+
+    loaded_files: list[tuple[str, bytes]] = []
+    texts: list[str] = []
+    for path in input_paths:
+        name = path.name
+        if name.casefold().endswith(".png"):
+            png = _read_png(path)
+            if png is None:
+                return 2
+            loaded_files.append((_repo_path(name), png))
+            continue
+        loaded = _read_text_file(path, name)
+        if loaded is None:
+            return 2
+        data, text = loaded
+        loaded_files.append((_repo_path(name), data))
+        texts.append(text)
 
     deny_tokens: list[str] = []
     if args.deny_file:
@@ -499,17 +646,22 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         deny_tokens = load_deny_file(deny_path)
 
-    hits = scan_html(html_text, deny_tokens)
+    hits: list[GuardHit] = []
+    for text in texts:
+        hits.extend(scan_html(text, deny_tokens))
     if hits:
-        report_hits(hits)
+        report_hits(hits[:MAX_HITS] if len(hits) > MAX_HITS else hits)
         return 1
 
+    html_bytes = loaded_files[0][1]
     published = build_published_json(html_bytes)
     digest = hashlib.sha256(html_bytes).hexdigest()
     if args.dry_run:
         print("leak guard: ok")
         print("dry-run: would publish")
         print(f"  {HTML_PATH} ({len(html_bytes)} bytes, sha256 {digest})")
+        for repo_path, data in loaded_files[1:]:
+            print(f"  {repo_path} ({len(data)} bytes)")
         print(f"  {JSON_PATH}")
         sys.stdout.write(published.decode("utf-8"))
         print(f"pages url: {PAGES_URL}")
@@ -521,15 +673,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{TOKEN_ENV} is not set", file=sys.stderr)
         return 2
     try:
-        result = publish_files(token, html_bytes, published)
+        result = publish_files(token, loaded_files, published)
     except PublishError as err:
         print(_scrub(str(err), token), file=sys.stderr)
         return 2
     print("leak guard: ok")
     if result == "unchanged":
-        print(f"unchanged: {HTML_PATH}")
+        for repo_path, _data in loaded_files:
+            print(f"unchanged: {repo_path}")
     else:
-        print(f"published: {HTML_PATH}")
+        for repo_path, _data in loaded_files:
+            print(f"published: {repo_path}")
         print(f"published: {JSON_PATH}")
         print(f"commit: {result}")
     print(f"pages url: {PAGES_URL}")

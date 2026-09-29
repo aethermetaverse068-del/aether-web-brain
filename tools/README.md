@@ -1,6 +1,6 @@
 # Publishing the brain map
 
-`tools/publish_brain_map.py` copies one finished HTML file to this repo's GitHub Pages site. It runs on the machine that already generated the page. It does not read the data cache, and it does not add a workflow that pulls data from anywhere else.
+`tools/publish_brain_map.py` copies allowlisted finished files to this repo's GitHub Pages site. It runs on the machine that already generated the page. It does not read the data cache, and it does not add a workflow that pulls data from anywhere else.
 
 ## How Pages serves `brain-map/`
 
@@ -14,12 +14,14 @@ A file committed at `brain-map/index.html` is therefore served at:
 
 https://aethermetaverse068-del.github.io/aether-web-brain/brain-map/
 
-The publish script does not change that Pages configuration. It adds or updates only these two paths, on top of the current `main` tree:
+The publish script does not change that Pages configuration. It adds or updates only allowlisted files under `brain-map/`, on top of the current `main` tree:
 
 - `brain-map/index.html` — the HTML file, byte for byte
-- `brain-map/published.json` — UTC timestamp and the sha256 of that file
+- `brain-map/brain-map.demo.json` — optional demo JSON, when you pass that file
+- `brain-map/<name>.png` — optional PNG screenshots, when each filename is allowlisted
+- `brain-map/published.json` — UTC timestamp and the sha256 of the HTML page (written by the script, not taken from the allowlist)
 
-`README.md` and `web-brain-showcase.html` are left as they are. If the remote HTML bytes are already identical, the script does not create a commit.
+`README.md` and `web-brain-showcase.html` are left as they are. If every allowlisted file already matches the remote bytes, the script does not create a commit.
 
 The `brain-map/index.html` committed in git is fictional demo content. It shows a `示範資料` banner so merging this change does not publish real data.
 
@@ -43,20 +45,38 @@ The generating machine does not need git credentials. The script talks to the Gi
 From a checkout of this repo, or from a copy of `tools/publish_brain_map.py` (stdlib only; no pip packages):
 
 ```sh
-python3 tools/publish_brain_map.py /path/to/index.html
+python3 tools/publish_brain_map.py /path/to/index.html --allow-file tools/publish-allow.txt
+```
+
+Optional companions (demo JSON and PNG screenshots) are extra arguments. Each basename must be listed in the allow file:
+
+```sh
+python3 tools/publish_brain_map.py /path/to/index.html /path/to/brain-map.demo.json /path/to/overview.png --allow-file /path/to/publish-allow.txt
 ```
 
 Check the leak guard and the publish plan with no network call:
 
 ```sh
-python3 tools/publish_brain_map.py /path/to/index.html --dry-run
+python3 tools/publish_brain_map.py /path/to/index.html --allow-file tools/publish-allow.txt --dry-run
 ```
 
 Add local database table or column names at publish time. That file stays on the generating machine and is not committed. One token per line; blank lines and `#` comments are ignored:
 
 ```sh
-python3 tools/publish_brain_map.py /path/to/index.html --deny-file /path/to/deny.txt
+python3 tools/publish_brain_map.py /path/to/index.html --allow-file tools/publish-allow.txt --deny-file /path/to/deny.txt
 ```
+
+## Allowlist
+
+`--allow-file` is required. The file is one basename per line; blank lines and `#` comments are ignored. A file is published only when its basename is listed there.
+
+These names are still refused when they are listed:
+
+- any filename containing `internal`
+- any filename ending in `.py`, `.sh`, or `.md`
+- `brain-map.json`, `brain-map.prev.json`, and `supabase-snapshot.json`
+
+The only names that can pass are `index.html`, `brain-map.demo.json`, and PNG screenshots (`.png`). `tools/publish-allow.txt` lists the first two. Add each screenshot filename on its own line before publishing it. A refusal exits nonzero, prints the rule and the filename, and does not call the network.
 
 On success the script prints the Pages URL above. A guard hit exits nonzero, prints the rule name and a short masked excerpt, and does not call the network.
 
@@ -64,7 +84,7 @@ On success the script prints the Pages URL above. A guard hit exits nonzero, pri
 
 Before anything leaves the machine the script scans the HTML (and an HTML-entity-decoded copy) case-insensitively for:
 
-- the words `aether`, `reiki`, and `CASE-`
+- the words `aether`, `reiki`, `CASE-`, `claude`, `fleet`, `cases`, `spiritual`, `internal`, the whole word `jd`, and the Chinese words `艦隊` and `老闆`
 - any `.md` filename
 - absolute or internal paths: `/workspace`, `/home/`, `case-local`, `C:\`, `~/`
 - secret-looking strings: `sk-`, `ghp_`, `github_pat_`, `xox`, JWTs starting with `eyJ`, `sb_secret`, `service_role`, AWS keys starting with `AKIA`, and PEM `BEGIN … PRIVATE KEY` headers
@@ -72,7 +92,7 @@ Before anything leaves the machine the script scans the HTML (and an HTML-entity
 - `*.supabase.co`
 - each token in `--deny-file`
 
-The guard scans the HTML you pass in. It does not scan this README.
+The guard scans the HTML page and any JSON companion. It does not scan this README. PNG files are checked by filename and by the PNG signature.
 
 ## First real publish
 

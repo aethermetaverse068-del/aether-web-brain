@@ -19,6 +19,13 @@ import publish_brain_map as pub
 
 ROOT = Path(__file__).resolve().parents[1]
 PLACEHOLDER = ROOT / "brain-map" / "index.html"
+ALLOW = ROOT / "tools" / "publish-allow.txt"
+MIN_PNG = bytes.fromhex(
+    "89504e470d0a1a0a"
+    "0000000d49484452000000010000000108060000001f15c489"
+    "0000000a49444154789c63000100000500010d0a2db4"
+    "0000000049454e44ae426082"
+)
 
 CLEAN_HTML = """<!DOCTYPE html>
 <html lang="zh-Hant">
@@ -72,6 +79,25 @@ class LeakGuardTests(unittest.TestCase):
         hits = _rules("<p>Ticket CASE-4401 is closed.</p>")
         self.assertIn("word:CASE-", hits)
         self.assertNotIn("path:case-local", hits)
+
+    def test_reviewer_substrings(self) -> None:
+        samples = {
+            "word:claude": "Claude",
+            "word:fleet": "FLEET",
+            "word:cases": "Cases",
+            "word:spiritual": "Spiritual",
+            "word:internal": "Internal",
+            "word:艦隊": "艦隊",
+            "word:老闆": "老闆",
+        }
+        for rule, token in samples.items():
+            with self.subTest(rule=rule):
+                found = _rules(f"<p>x {token} y</p>")
+                self.assertIn(rule, found)
+
+    def test_jd_is_whole_word_only(self) -> None:
+        self.assertIn("word:jd", _rules("<p>owner JD said</p>"))
+        self.assertNotIn("word:jd", _rules("<p>jdk and ajd</p>"))
 
     def test_md_filename(self) -> None:
         self.assertIn("filename:.md", _rules("<p>See docs/README.md for notes.</p>"))
@@ -140,12 +166,12 @@ class LeakGuardTests(unittest.TestCase):
         self.assertIn("supabase", _rules(html))
 
     def test_deny_file_token_trips_and_absent_token_passes(self) -> None:
-        blocked = pub.scan_html(CLEAN_HTML, ["internal_orders_table"])
+        blocked = pub.scan_html(CLEAN_HTML, ["orders_table_alpha"])
         self.assertEqual([hit.rule for hit in blocked], [])
-        page = CLEAN_HTML.replace("春季閱讀會", "internal_orders_table")
-        hits = pub.scan_html(page, ["internal_orders_table"])
+        page = CLEAN_HTML.replace("春季閱讀會", "orders_table_alpha")
+        hits = pub.scan_html(page, ["orders_table_alpha"])
         self.assertEqual([hit.rule for hit in hits], ["deny-list"])
-        self.assertNotIn("internal_orders_table", hits[0].excerpt)
+        self.assertNotIn("orders_table_alpha", hits[0].excerpt)
 
     def test_deny_token_is_literal_and_case_insensitive(self) -> None:
         html = "<p>userXemail versus User.Email</p>"
@@ -233,7 +259,7 @@ class PublishPlanTests(unittest.TestCase):
         token = "github_pat_should_not_leave"
         with mock.patch("urllib.request.urlopen") as urlopen:
             code, stdout, stderr = self._run(
-                [str(PLACEHOLDER), "--dry-run"],
+                [str(PLACEHOLDER), "--allow-file", str(ALLOW), "--dry-run"],
                 {pub.TOKEN_ENV: token},
             )
         urlopen.assert_not_called()
@@ -257,7 +283,7 @@ class PublishPlanTests(unittest.TestCase):
             deny.write_text(f"# keep local\n{secret_name}\n", encoding="utf-8")
             with mock.patch("urllib.request.urlopen") as urlopen:
                 code, stdout, stderr = self._run(
-                    [str(page), "--dry-run", "--deny-file", str(deny)],
+                    [str(page), "--allow-file", str(ALLOW), "--dry-run", "--deny-file", str(deny)],
                     {pub.TOKEN_ENV: "github_pat_should_not_leave"},
                 )
         urlopen.assert_not_called()
@@ -274,7 +300,7 @@ class PublishPlanTests(unittest.TestCase):
             page.write_text("<p>aether</p>", encoding="utf-8")
             with mock.patch("urllib.request.urlopen") as urlopen:
                 code, stdout, stderr = self._run(
-                    [str(page)],
+                    [str(page), "--allow-file", str(ALLOW)],
                     {pub.TOKEN_ENV: "github_pat_should_not_leave"},
                 )
         urlopen.assert_not_called()
@@ -293,7 +319,10 @@ class PublishPlanTests(unittest.TestCase):
             env.pop(pub.TOKEN_ENV, None)
             with mock.patch.dict(os.environ, env, clear=True):
                 with mock.patch("urllib.request.urlopen") as urlopen:
-                    code, _stdout, stderr = self._run([str(page)], env={})
+                    code, _stdout, stderr = self._run(
+                        [str(page), "--allow-file", str(ALLOW)],
+                        env={},
+                    )
         urlopen.assert_not_called()
         self.assertEqual(code, 2)
         self.assertIn(pub.TOKEN_ENV, stderr)
@@ -362,7 +391,10 @@ class PublishPlanTests(unittest.TestCase):
             page = Path(tmp) / "index.html"
             page.write_bytes(html)
             with mock.patch("urllib.request.urlopen", urlopen):
-                code, stdout, stderr = self._run([str(page)], {pub.TOKEN_ENV: token})
+                code, stdout, stderr = self._run(
+                    [str(page), "--allow-file", str(ALLOW)],
+                    {pub.TOKEN_ENV: token},
+                )
         self.assertEqual(code, 0, stderr)
         self.assertIn("commit: " + ("d" * 40), stdout)
         self.assertIn(pub.PAGES_URL, stdout)
@@ -400,7 +432,10 @@ class PublishPlanTests(unittest.TestCase):
             page = Path(tmp) / "index.html"
             page.write_bytes(html)
             with mock.patch("urllib.request.urlopen", urlopen):
-                code, stdout, stderr = self._run([str(page)], {pub.TOKEN_ENV: token})
+                code, stdout, stderr = self._run(
+                    [str(page), "--allow-file", str(ALLOW)],
+                    {pub.TOKEN_ENV: token},
+                )
         self.assertEqual(code, 0, stderr)
         self.assertIn("unchanged:", stdout)
         self.assertIn(pub.PAGES_URL, stdout)
@@ -428,12 +463,177 @@ class PublishPlanTests(unittest.TestCase):
             page = Path(tmp) / "index.html"
             page.write_bytes(html)
             with mock.patch("urllib.request.urlopen", urlopen):
-                code, stdout, stderr = self._run([str(page)], {pub.TOKEN_ENV: token})
+                code, stdout, stderr = self._run(
+                    [str(page), "--allow-file", str(ALLOW)],
+                    {pub.TOKEN_ENV: token},
+                )
         self.assertEqual(code, 2)
         self.assertNotIn(token, stderr)
         self.assertNotIn(token, stdout)
         self.assertIn("[redacted]", stderr)
         self.assertIn("HTTP 401", stderr)
+
+
+class AllowlistTests(unittest.TestCase):
+    def _run(self, args: list[str], env: dict[str, str] | None = None) -> tuple[int, str, str]:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.dict(os.environ, env or {}, clear=False):
+            with mock.patch("sys.stdout", stdout), mock.patch("sys.stderr", stderr):
+                code = pub.main(args)
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def test_load_allow_file_skips_blanks_and_comments(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "publish-allow.txt"
+            path.write_text(
+                "# names\n\nindex.html\n\n# png\noverview.png\nindex.html\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(pub.load_allow_file(path), ["index.html", "overview.png"])
+
+    def test_hard_refuse_wins_over_allowlist(self) -> None:
+        listed = [
+            "index.html",
+            "notes.md",
+            "run.py",
+            "run.sh",
+            "Notes.MD",
+            "internal-map.png",
+            "MyInternal.json",
+            "brain-map.json",
+            "brain-map.prev.json",
+            "supabase-snapshot.json",
+            "Brain-Map.JSON",
+        ]
+        expected = {
+            "notes.md": "filename:hard-refuse:.md",
+            "run.py": "filename:hard-refuse:.py",
+            "run.sh": "filename:hard-refuse:.sh",
+            "Notes.MD": "filename:hard-refuse:.md",
+            "internal-map.png": "filename:hard-refuse:internal",
+            "MyInternal.json": "filename:hard-refuse:internal",
+            "brain-map.json": "filename:hard-refuse:brain-map.json",
+            "brain-map.prev.json": "filename:hard-refuse:brain-map.prev.json",
+            "supabase-snapshot.json": "filename:hard-refuse:supabase-snapshot.json",
+            "Brain-Map.JSON": "filename:hard-refuse:brain-map.json",
+        }
+        for name, rule in expected.items():
+            with self.subTest(name=name):
+                self.assertEqual(pub.filename_refusal(name, listed), rule)
+
+    def test_unlisted_and_outside_allowed_set_are_refused(self) -> None:
+        allow = ["index.html", "readme.txt"]
+        self.assertEqual(
+            pub.filename_refusal("overview.png", allow),
+            "filename:not-listed",
+        )
+        self.assertEqual(
+            pub.filename_refusal("readme.txt", allow),
+            "filename:not-allowed-set",
+        )
+        self.assertIsNone(pub.filename_refusal("index.html", allow))
+        self.assertIsNone(
+            pub.filename_refusal("brain-map.demo.json", ["brain-map.demo.json"])
+        )
+        self.assertIsNone(pub.filename_refusal("overview.png", ["overview.png"]))
+
+    def test_publish_refuses_unlisted_file_before_network(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            page = root / "index.html"
+            page.write_text(CLEAN_HTML, encoding="utf-8")
+            extra = root / "overview.png"
+            extra.write_bytes(MIN_PNG)
+            allow = root / "publish-allow.txt"
+            allow.write_text("index.html\n", encoding="utf-8")
+            with mock.patch("urllib.request.urlopen") as urlopen:
+                code, stdout, stderr = self._run(
+                    [str(page), str(extra), "--allow-file", str(allow)],
+                    {pub.TOKEN_ENV: "github_pat_should_not_leave"},
+                )
+        urlopen.assert_not_called()
+        self.assertEqual(code, 1)
+        self.assertIn("rule: filename:not-listed", stderr)
+        self.assertIn("file: overview.png", stderr)
+        self.assertIn("nothing was published", stderr)
+        self.assertEqual(stdout, "")
+
+    def test_publish_hard_refuses_listed_source_files_before_network(self) -> None:
+        names = [
+            "notes.md",
+            "run.py",
+            "run.sh",
+            "internal-shot.png",
+            "brain-map.json",
+            "brain-map.prev.json",
+            "supabase-snapshot.json",
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            page = root / "index.html"
+            page.write_text(CLEAN_HTML, encoding="utf-8")
+            allow_lines = ["index.html", *names]
+            allow = root / "publish-allow.txt"
+            allow.write_text("\n".join(allow_lines) + "\n", encoding="utf-8")
+            for name in names:
+                (root / name).write_text("clean fictional text\n", encoding="utf-8")
+                with mock.patch("urllib.request.urlopen") as urlopen:
+                    code, stdout, stderr = self._run(
+                        [str(page), str(root / name), "--allow-file", str(allow), "--dry-run"],
+                        {pub.TOKEN_ENV: "github_pat_should_not_leave"},
+                    )
+                urlopen.assert_not_called()
+                self.assertEqual(code, 1, name)
+                self.assertIn("rule: filename:hard-refuse:", stderr)
+                self.assertIn(f"file: {name}", stderr)
+                self.assertIn("nothing was published", stderr)
+                self.assertNotIn("clean fictional text", stderr)
+                self.assertEqual(stdout, "")
+
+    def test_dry_run_allows_demo_json_and_png(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            page = root / "index.html"
+            page.write_text(CLEAN_HTML, encoding="utf-8")
+            demo = root / "brain-map.demo.json"
+            demo.write_text('{"label":"示範資料"}\n', encoding="utf-8")
+            shot = root / "overview.png"
+            shot.write_bytes(MIN_PNG)
+            allow = root / "publish-allow.txt"
+            allow.write_text(
+                "# publish set\nindex.html\nbrain-map.demo.json\noverview.png\n",
+                encoding="utf-8",
+            )
+            with mock.patch("urllib.request.urlopen") as urlopen:
+                code, stdout, stderr = self._run(
+                    [str(page), str(demo), str(shot), "--allow-file", str(allow), "--dry-run"]
+                )
+        urlopen.assert_not_called()
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("brain-map/index.html", stdout)
+        self.assertIn("brain-map/brain-map.demo.json", stdout)
+        self.assertIn("brain-map/overview.png", stdout)
+        self.assertIn("no network calls made", stdout)
+
+    def test_demo_json_leak_blocks_before_network(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            page = root / "index.html"
+            page.write_text(CLEAN_HTML, encoding="utf-8")
+            demo = root / "brain-map.demo.json"
+            demo.write_text('{"note":"claude"}\n', encoding="utf-8")
+            allow = root / "publish-allow.txt"
+            allow.write_text("index.html\nbrain-map.demo.json\n", encoding="utf-8")
+            with mock.patch("urllib.request.urlopen") as urlopen:
+                code, _stdout, stderr = self._run(
+                    [str(page), str(demo), "--allow-file", str(allow), "--dry-run"],
+                    {pub.TOKEN_ENV: "github_pat_should_not_leave"},
+                )
+        urlopen.assert_not_called()
+        self.assertEqual(code, 1)
+        self.assertIn("rule: word:claude", stderr)
+        self.assertNotIn("claude", stderr.replace("rule: word:claude", ""))
 
 
 class _Resp:
