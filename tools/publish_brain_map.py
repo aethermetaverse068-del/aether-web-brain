@@ -92,6 +92,72 @@ def _url_accept(match: re.Match[str]) -> bool:
     return text[match.start() : end] not in _ALLOWED_URLS
 
 
+def _has_protocol_relative(value: str) -> bool:
+    """True when a URL token in value starts with // (not http://)."""
+    for part in value.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        url = token.split()[0]
+        if url.startswith("//"):
+            return True
+    return False
+
+
+def _protocol_relative_accept(match: re.Match[str]) -> bool:
+    """True when an attribute or CSS url/@import value is protocol-relative."""
+    for value in match.groupdict().values():
+        if value and _has_protocol_relative(value):
+            return True
+    return False
+
+
+_PROTOCOL_RELATIVE_RE = re.compile(
+    r"""(?ix)
+    (?:
+        (?<![\w-])
+        (?:src|href|srcset|action|poster)
+        \s*=\s*
+        (?:
+            "(?P<attr_dq>[^"]*)"
+            | '(?P<attr_sq>[^']*)'
+            | (?P<attr_uq>[^\s>]+)
+        )
+        |
+        (?:url\s*\(\s*|@import\s+)
+        (?:
+            "(?P<css_dq>[^"]*)"
+            | '(?P<css_sq>[^']*)'
+            | (?P<css_uq>[^)"'\s][^);]*)
+        )
+    )
+    """
+)
+
+# Base64 alphabet plus the whitespace a data URI payload may wrap with.
+_B64_PAYLOAD_CHARS = set(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\r\n\t "
+)
+
+
+def _ref_accept(match: re.Match[str]) -> bool:
+    """False when the 20-character run sits inside a data: base64 payload."""
+    text = match.string
+    index = match.start()
+    while index > 0 and text[index - 1] in _B64_PAYLOAD_CHARS:
+        index -= 1
+    prefix = text[max(0, index - 32) : index].lower()
+    return not prefix.endswith("base64,")
+
+
+# Public-cloud location labels. Longer labels come first. Full names in docs
+# use a fictional trailing digit so the examples are not real regions.
+_CLOUD_REGION_PREFIXES = (
+    "southamerica|northamerica|australia|europe|africa|asia|"
+    "af|ap|ca|cn|eu|il|me|mx|sa|us"
+)
+
+
 # Case-insensitive. Patterns consume the whole suspicious token so the
 # printed excerpt can be masked without leaving the rest of the secret beside it.
 _RULES: list[tuple[str, re.Pattern[str], object]] = [
@@ -182,13 +248,18 @@ _RULES: list[tuple[str, re.Pattern[str], object]] = [
     ),
     ("word:supabase", re.compile(r"supabase", re.I), None),
     ("url", re.compile(r"https?://", re.I), _url_accept),
+    ("url", _PROTOCOL_RELATIVE_RE, _protocol_relative_accept),
     (
         "supabase-ref",
         re.compile(r"(?<![a-z0-9])[a-z0-9]{20}(?![a-z0-9])", re.I),
+        _ref_accept,
+    ),
+    # AWS-style af-south-9 and GCP-style europe-north9, any case.
+    (
+        "cloud-region",
+        re.compile(rf"\b(?:{_CLOUD_REGION_PREFIXES})-[a-z]+-?\d\b", re.I),
         None,
     ),
-    # AWS (ap-northeast-1) and GCP (europe-west1, us-central1), any case.
-    ("cloud-region", re.compile(r"\b[a-z]{2,}-[a-z]+-?\d\b", re.I), None),
 ]
 
 

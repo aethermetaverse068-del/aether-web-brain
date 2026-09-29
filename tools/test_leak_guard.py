@@ -71,8 +71,10 @@ class LeakGuardTests(unittest.TestCase):
                 "abcdefghij01234567890",
                 "sha-256",
                 "utf-8",
-                "us-east",
-                "europewest1",
+                "ap-fictional",
+                "europenorth9",
+                "col-md-6",
+                "code // not-a-url",
             ]
         )
         self.assertEqual(pub.scan_html(f"<p>{text}</p>"), [])
@@ -774,10 +776,10 @@ class SecurityReviewTests(unittest.TestCase):
             ("see supabase here", "word:supabase"),
             ("abcdefghij0123456789", "supabase-ref"),
             ("ABCDEFGHIJ0123456789", "supabase-ref"),
-            ("ap-northeast-1", "cloud-region"),
-            ("us-east-1", "cloud-region"),
-            ("AP-NORTHEAST-2", "cloud-region"),
-            ("europe-west1", "cloud-region"),
+            ("af-south-9", "cloud-region"),
+            ("eu-central-9", "cloud-region"),
+            ("AP-SOUTHEAST-9", "cloud-region"),
+            ("europe-north9", "cloud-region"),
         ]
         for body, rule in samples:
             with self.subTest(body=body):
@@ -966,6 +968,43 @@ class SecurityReviewTests(unittest.TestCase):
             self.assertIn("rule: url", stderr)
             self.assertNotIn("https://example.test/a", stderr)
             self.assertEqual(stdout, "")
+
+    def test_protocol_relative_urls_are_refused(self) -> None:
+        host = "zz-cdn.example"
+        pages = [
+            f'<img src="//{host}/p.png">',
+            f'<a href="//{host}/x">link</a>',
+            f"<style>b{{background:url(//{host}/a.png)}}</style>",
+            f'<style>@import "//{host}/a.css";</style>',
+        ]
+        for fragment in pages:
+            with self.subTest(fragment=fragment):
+                with tempfile.TemporaryDirectory() as tmp:
+                    page, allow, deny = self._page(Path(tmp), fragment)
+                    with mock.patch("urllib.request.urlopen") as urlopen:
+                        code, stdout, stderr = self._run(
+                            [
+                                str(page),
+                                "--allow-file",
+                                str(allow),
+                                "--deny-file",
+                                str(deny),
+                                "--dry-run",
+                            ],
+                            {pub.TOKEN_ENV: "github_pat_should_not_leave"},
+                        )
+                urlopen.assert_not_called()
+                self.assertEqual(code, 1, stderr)
+                self.assertIn("rule: url", stderr)
+                self.assertNotIn(host, stderr)
+                self.assertNotIn(fragment, stderr)
+                self.assertEqual(stdout, "")
+
+    def test_base64_data_uri_is_not_a_project_ref(self) -> None:
+        blob = "data:image/png;base64,++++" + ("B" * 20) + "++++"
+        self.assertNotIn("supabase-ref", _rules(f"<p>{blob}</p>"))
+        self.assertIn("supabase-ref", _rules(f"<p>{blob}</p><p>ABCDEFGHIJ0123456789</p>"))
+        self.assertEqual(pub.scan_html("<p class='col-md-6'>grid</p>"), [])
 
     def test_png_text_chunks_and_sha_allowlist(self) -> None:
         self.assertEqual(pub.png_text_fragments(MIN_PNG), [])

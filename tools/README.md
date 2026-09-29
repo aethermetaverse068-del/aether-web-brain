@@ -94,12 +94,14 @@ Before anything leaves the machine the script scans the HTML, any JSON companion
 - absolute or internal paths: `/workspace`, `/home/`, `case-local`, `C:\`, `~/`
 - secret-looking strings: `sk-`, `ghp_`, `github_pat_`, `xox`, JWTs starting with `eyJ`, `sb_secret`, `service_role`, AWS keys starting with `AKIA`, and PEM `BEGIN … PRIVATE KEY` headers
 - email addresses
-- any `http://` or `https://` URL, except the exact SVG namespace values `http://www.w3.org/2000/svg` and `http://www.w3.org/1999/xlink`
-- the substring `supabase`, `*.supabase.co`, and a standalone 20-character project ref (any case)
-- cloud regions in any case, including AWS names such as `ap-northeast-1` and `AP-NORTHEAST-2`, and GCP names such as `europe-west1` and `us-central1`
+- any `http://` or `https://` URL, and any protocol-relative `//...` value in `src`, `href`, `srcset`, `action`, `poster`, or CSS `url(...)` / `@import`. The only exceptions are the exact SVG namespace values `http://www.w3.org/2000/svg` and `http://www.w3.org/1999/xlink`
+- the substring `supabase`, `*.supabase.co`, and a standalone 20-character project ref (any case). A run inside a `data:` base64 payload is ignored
+- cloud regions in any case whose first label is a known location prefix, including AWS-style names such as `af-south-9` and `AP-SOUTHEAST-9`, and GCP-style names such as `europe-north9`
 - each token in `--deny-file`
 
 The guard does not scan this README.
+
+A CSS class whose first label is a location prefix can still match the region rule. `col-md-6` does not. A 20-character token that is not inside a `data:` base64 payload can still match the project-ref rule.
 
 ## First real publish
 
