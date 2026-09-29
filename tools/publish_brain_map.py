@@ -139,8 +139,9 @@ _PROTOCOL_RELATIVE_RE = re.compile(
 # data URI. alt, title, data-*, and every other attribute may not.
 _IMAGE_DATA_ATTRS = frozenset({"src", "href", "srcset", "poster"})
 
-# These elements are raw text on every Python version. Their contents are
-# never parsed as tags, so a data URI inside them cannot be exempted.
+# HTML raw-text elements. Browsers ignore a trailing slash on these, so
+# <textarea/> is an open element, not an empty one. plaintext runs to EOF.
+# script and style are included: a self-closing form is still raw text.
 _RAW_TEXT_TAGS = frozenset(
     {
         "textarea",
@@ -151,6 +152,8 @@ _RAW_TEXT_TAGS = frozenset(
         "noembed",
         "noframes",
         "noscript",
+        "script",
+        "style",
     }
 )
 
@@ -271,23 +274,43 @@ class _MarkupSpanParser(html.parser.HTMLParser):
         self.feed(text)
         self.close()
 
+    def set_cdata_mode(self, elem: str, *, escapable: bool = False) -> None:
+        """Raw text until a real end tag. plaintext never ends.
+
+        The stdlib pattern allows whitespace between ``</`` and the name on
+        builds that lack the security patch, so ``</ title>`` would resume
+        markup. HTML does not allow that space. A trailing slash on the
+        start tag is also ignored: the element stays open.
+        """
+        del escapable
+        self.cdata_elem = elem.lower()
+        if self.cdata_elem == "plaintext":
+            # Nothing in the file ends plaintext. Do not search for an end tag.
+            self.interesting = re.compile(r"(?!)")
+            return
+        self.interesting = re.compile(
+            rf"</{re.escape(self.cdata_elem)}(?=[\t\n\r\f />])",
+            re.IGNORECASE | re.ASCII,
+        )
+
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         del attrs
         line, column = self.getpos()
         start = _offset_at(self.text, line, column)
         raw = self.get_starttag_text() or ""
-        if self.text[start : start + len(raw)] != raw:
-            return
-        for name, value_at, value_end in _iter_tag_attr_values(raw):
-            value = raw[value_at:value_end]
-            origin = start + value_at
-            if name in _IMAGE_DATA_ATTRS:
-                self.spans.extend(_payload_spans_in(value, origin))
-            elif name == "style":
-                self.spans.extend(_url_payload_spans(value, origin))
-        if tag in _RAW_TEXT_TAGS and not raw.endswith("/>"):
+        aligned = bool(raw) and self.text[start : start + len(raw)] == raw
+        if aligned:
+            for name, value_at, value_end in _iter_tag_attr_values(raw):
+                value = raw[value_at:value_end]
+                origin = start + value_at
+                if name in _IMAGE_DATA_ATTRS:
+                    self.spans.extend(_payload_spans_in(value, origin))
+                elif name == "style":
+                    self.spans.extend(_url_payload_spans(value, origin))
+        # HTML ignores the slash in <textarea/>, <title />, and <xmp x/>.
+        if tag in _RAW_TEXT_TAGS:
             self.set_cdata_mode(tag)
-        if tag == "style" and not raw.endswith("/>"):
+        if tag == "style" and aligned:
             self._style_at = start + len(raw)
 
     def handle_endtag(self, tag: str) -> None:
@@ -295,9 +318,12 @@ class _MarkupSpanParser(html.parser.HTMLParser):
             return
         line, column = self.getpos()
         end = _offset_at(self.text, line, column)
-        if end >= self._style_at:
-            fragment = self.text[self._style_at : end]
-            self.spans.extend(_url_payload_spans(fragment, self._style_at))
+        # <style/> calls this immediately, still at the start tag. The
+        # element stays open until a later </style>.
+        if end < self._style_at:
+            return
+        fragment = self.text[self._style_at : end]
+        self.spans.extend(_url_payload_spans(fragment, self._style_at))
         self._style_at = None
 
 
@@ -327,9 +353,10 @@ def _ref_accept(match: re.Match[str]) -> bool:
     Spans come from the raw HTML only. A decoded or unescaped copy is always
     a hit. The payload must be a contiguous `data:image/...;base64,` run, with
     no whitespace, in src, href, srcset, or poster, or in url() in a style
-    attribute or a <style> element. Text, script, comments, textarea, title,
-    xmp, plaintext, iframe, noembed, noframes, noscript, and JSON are never
-    exempt.
+    attribute or a <style> element. Text, comments, JSON, and the raw
+    elements textarea, title, xmp, plaintext, iframe, noembed, noframes,
+    noscript, script, and style are never exempt. plaintext runs to EOF.
+    A trailing slash does not close any of those elements.
     """
     if match.string is not _ref_exempt_text:
         return True
@@ -1092,6 +1119,34 @@ def _repo_path(basename: str) -> str:
     return f"brain-map/{basename}"
 
 
+def html_parser_patch_present() -> bool:
+    """True when stdlib HTMLParser has the raw-text security fix.
+
+    The dividing line is ``RCDATA_CONTENT_ELEMENTS``, not the minor
+    version. It is absent on 3.12.11 and 3.13.5, and present on 3.12.12,
+    3.13.6, and 3.14.0. Without it, ``</ title>`` ends a title early.
+    """
+    elements = getattr(html.parser.HTMLParser, "RCDATA_CONTENT_ELEMENTS", None)
+    if not elements:
+        return False
+    try:
+        names = {str(item).lower() for item in elements}
+    except TypeError:
+        return False
+    return {"textarea", "title"} <= names
+
+
+def _report_unpatched_html_parser() -> None:
+    print("publish refused", file=sys.stderr)
+    print("rule: html-parser:unpatched", file=sys.stderr)
+    print(
+        "html.parser.HTMLParser.RCDATA_CONTENT_ELEMENTS is missing; "
+        "this Python's html.parser cannot scan raw text safely",
+        file=sys.stderr,
+    )
+    print("nothing was published", file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="publish_brain_map.py",
@@ -1128,6 +1183,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Required when publishing PNGs. One sha256 hex digest per line.",
     )
     args = parser.parse_args(argv)
+
+    if not html_parser_patch_present():
+        _report_unpatched_html_parser()
+        return 2
 
     if not args.deny_file:
         print("publish refused", file=sys.stderr)

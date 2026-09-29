@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html.parser
 import io
 import json
 import os
@@ -740,6 +741,39 @@ class SecurityReviewTests(unittest.TestCase):
         self.assertIn("nothing was published", stderr)
         self.assertEqual(stdout, "")
 
+    def test_missing_rcdata_content_elements_exits_2(self) -> None:
+        parser_cls = html.parser.HTMLParser
+        had = hasattr(parser_cls, "RCDATA_CONTENT_ELEMENTS")
+        saved = getattr(parser_cls, "RCDATA_CONTENT_ELEMENTS", None)
+        if had:
+            delattr(parser_cls, "RCDATA_CONTENT_ELEMENTS")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                page, allow, deny = self._page(root, "clean fictional page")
+                with mock.patch("urllib.request.urlopen") as urlopen:
+                    code, stdout, stderr = self._run(
+                        [
+                            str(page),
+                            "--allow-file",
+                            str(allow),
+                            "--deny-file",
+                            str(deny),
+                            "--dry-run",
+                        ],
+                        {pub.TOKEN_ENV: "github_pat_should_not_leave"},
+                    )
+            urlopen.assert_not_called()
+            self.assertEqual(code, 2)
+            self.assertIn("rule: html-parser:unpatched", stderr)
+            self.assertIn("RCDATA_CONTENT_ELEMENTS", stderr)
+            self.assertNotIn("github_pat_should_not_leave", stderr)
+            self.assertEqual(stdout, "")
+            self.assertFalse(pub.html_parser_patch_present())
+        finally:
+            if had:
+                parser_cls.RCDATA_CONTENT_ELEMENTS = saved
+
     def test_deny_file_without_usable_lines_exits_before_network(self) -> None:
         cases = {
             "empty": "",
@@ -1079,6 +1113,49 @@ class SecurityReviewTests(unittest.TestCase):
                 hits = pub.scan_html(html)
                 self.assertIn("supabase-ref", {hit.rule for hit in hits})
                 self.assertNotIn(ref, " ".join(hit.excerpt for hit in hits))
+
+    def test_self_closing_raw_text_does_not_exempt_a_data_uri(self) -> None:
+        ref = "abcdefghij0123456789"
+        img = f'<img src="data:image/png;base64,{ref}">'
+        tags = (
+            "textarea",
+            "title",
+            "xmp",
+            "plaintext",
+            "iframe",
+            "noembed",
+            "noframes",
+            "noscript",
+            "script",
+            "style",
+        )
+        forms = {
+            "slash": "/>",
+            "space-slash": " />",
+            "attr-slash": " x/>",
+        }
+        self.assertEqual(len(tags) * len(forms), 30)
+        for tag in tags:
+            for label, form in forms.items():
+                html = f"<{tag}{form}{img}</{tag}>"
+                with self.subTest(tag=tag, form=label):
+                    hits = pub.scan_html(html)
+                    self.assertIn("supabase-ref", {hit.rule for hit in hits})
+                    self.assertNotIn(ref, " ".join(hit.excerpt for hit in hits))
+
+    def test_plaintext_through_eof_is_not_exempt(self) -> None:
+        ref = "abcdefghij0123456789"
+        html = f'<plaintext>x</plaintext><img src="data:image/png;base64,{ref}">'
+        hits = pub.scan_html(html)
+        self.assertIn("supabase-ref", {hit.rule for hit in hits})
+        self.assertNotIn(ref, " ".join(hit.excerpt for hit in hits))
+
+    def test_title_end_tag_with_leading_space_is_not_exempt(self) -> None:
+        ref = "abcdefghij0123456789"
+        html = f'<title>x</ title><img src="data:image/png;base64,{ref}"></title>'
+        hits = pub.scan_html(html)
+        self.assertIn("supabase-ref", {hit.rule for hit in hits})
+        self.assertNotIn(ref, " ".join(hit.excerpt for hit in hits))
 
     def test_png_text_chunks_and_sha_allowlist(self) -> None:
         self.assertEqual(pub.png_text_fragments(MIN_PNG), [])

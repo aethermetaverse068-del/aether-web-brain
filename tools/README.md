@@ -95,7 +95,7 @@ Before anything leaves the machine the script scans the HTML, any JSON companion
 - secret-looking strings: `sk-`, `ghp_`, `github_pat_`, `xox`, JWTs starting with `eyJ`, `sb_secret`, `service_role`, AWS keys starting with `AKIA`, and PEM `BEGIN … PRIVATE KEY` headers
 - email addresses
 - any `http://` or `https://` URL, and any protocol-relative `//...` value in `src`, `href`, `srcset`, `action`, `poster`, or CSS `url(...)` / `@import`. The only exceptions are the exact SVG namespace values `http://www.w3.org/2000/svg` and `http://www.w3.org/1999/xlink`
-- the substring `supabase`, `*.supabase.co`, and a standalone 20-character project ref (any case). The only skip is a contiguous `data:image/...;base64,` payload, with no whitespace, inside a real `src`, `href`, `srcset`, or `poster` attribute, or inside `url()` in a `style` attribute or a `<style>` element, and only in the original raw HTML. An entity-decoded copy is scanned with no skip. Text, scripts, comments, JSON, and the raw elements `textarea`, `title`, `xmp`, `plaintext`, `iframe`, `noembed`, `noframes`, and `noscript` are not skipped
+- the substring `supabase`, `*.supabase.co`, and a standalone 20-character project ref (any case). The only skip is a contiguous `data:image/...;base64,` payload, with no whitespace, inside a real `src`, `href`, `srcset`, or `poster` attribute, or inside `url()` in a `style` attribute or a `<style>` element, and only in the original raw HTML. An entity-decoded copy is scanned with no skip. Text, comments, JSON, and the raw elements `textarea`, `title`, `xmp`, `plaintext`, `iframe`, `noembed`, `noframes`, `noscript`, `script`, and `style` are not skipped. A trailing slash does not close them (`<textarea/>` stays open). `plaintext` runs to the end of the file
 - cloud regions in any case whose first label is a known location prefix, including a single trailing zone letter. Fictional examples: `af-south-9`, `af-south-9b`, `AP-SOUTHEAST-9`, and `europe-north9`
 - each token in `--deny-file`
 
@@ -113,4 +113,4 @@ Review the generated page and the `--dry-run` output yourself before the first p
 python3 -m unittest discover -s tools -p 'test_*.py' -v
 ```
 
-Python 3.12 or newer is required. The same command runs in GitHub Actions on Python 3.12, 3.13, and 3.14 for pull requests and pushes (`.github/workflows/tests.yml`). That workflow only runs the tests. It does not publish.
+The scanner needs a Python whose `html.parser.HTMLParser` defines `RCDATA_CONTENT_ELEMENTS` (the raw-text security fix). A minor version is not enough: 3.12.11 and 3.13.5 do not have it; 3.12.12, 3.13.6, and 3.14.0 do. If the attribute is missing the script exits 2 and does not call the network. The same command runs in GitHub Actions on Python 3.12, 3.13, and 3.14 for pull requests and pushes (`.github/workflows/tests.yml`). That workflow only runs the tests. It does not publish. The job log prints the patch version setup-python installed.
