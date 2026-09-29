@@ -727,10 +727,39 @@ class SecurityReviewTests(unittest.TestCase):
                     {pub.TOKEN_ENV: "github_pat_should_not_leave"},
                 )
         urlopen.assert_not_called()
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 2)
         self.assertIn("rule: deny-file:required", stderr)
         self.assertIn("nothing was published", stderr)
         self.assertEqual(stdout, "")
+
+    def test_deny_file_without_usable_lines_exits_before_network(self) -> None:
+        cases = {
+            "empty": "",
+            "comments-only": "# local names\n\n  # another\n",
+        }
+        for label, contents in cases.items():
+            with self.subTest(label=label):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    page, allow, deny = self._page(root, "clean fictional page")
+                    deny.write_text(contents, encoding="utf-8")
+                    with mock.patch("urllib.request.urlopen") as urlopen:
+                        code, stdout, stderr = self._run(
+                            [
+                                str(page),
+                                "--allow-file",
+                                str(allow),
+                                "--deny-file",
+                                str(deny),
+                                "--dry-run",
+                            ],
+                            {pub.TOKEN_ENV: "github_pat_should_not_leave"},
+                        )
+                urlopen.assert_not_called()
+                self.assertEqual(code, 2, stderr)
+                self.assertIn("rule: deny-file:empty", stderr)
+                self.assertIn("nothing was published", stderr)
+                self.assertEqual(stdout, "")
 
     def test_builtin_rules_block_before_network(self) -> None:
         samples = [
@@ -838,7 +867,7 @@ class SecurityReviewTests(unittest.TestCase):
                     allow = root / "publish-allow.txt"
                     allow.write_text("index.html\noverview.png\n", encoding="utf-8")
                     deny = root / "deny-local.txt"
-                    deny.write_text("# none\n", encoding="utf-8")
+                    deny.write_text("# none\nfictional_table_alpha\n", encoding="utf-8")
                     sha_file = root / "png-sha.txt"
                     sha_file.write_text(hashlib.sha256(png_bytes).hexdigest() + "\n", encoding="utf-8")
                     with mock.patch("urllib.request.urlopen") as urlopen:
@@ -870,7 +899,7 @@ class SecurityReviewTests(unittest.TestCase):
             allow = root / "publish-allow.txt"
             allow.write_text("index.html\noverview.png\n", encoding="utf-8")
             deny = root / "deny-local.txt"
-            deny.write_text("# none\n", encoding="utf-8")
+            deny.write_text("# none\nfictional_table_alpha\n", encoding="utf-8")
             sha_file = root / "png-sha.txt"
             sha_file.write_text(hashlib.sha256(bad_png).hexdigest() + "\n", encoding="utf-8")
             with mock.patch("urllib.request.urlopen") as urlopen:
@@ -902,7 +931,7 @@ class SecurityReviewTests(unittest.TestCase):
             allow = root / "publish-allow.txt"
             allow.write_text("index.html\noverview.png\n", encoding="utf-8")
             deny = root / "deny-local.txt"
-            deny.write_text("# none\n", encoding="utf-8")
+            deny.write_text("# none\nfictional_table_alpha\n", encoding="utf-8")
             sha_file = root / "png-sha.txt"
             sha_file.write_text(("ab" * 32) + "\n", encoding="utf-8")
             with mock.patch("urllib.request.urlopen") as urlopen:
@@ -932,7 +961,7 @@ class SecurityReviewTests(unittest.TestCase):
             allow = root / "publish-allow.txt"
             allow.write_text("index.html\noverview.png\n", encoding="utf-8")
             deny = root / "deny-local.txt"
-            deny.write_text("# none\n", encoding="utf-8")
+            deny.write_text("# none\nfictional_table_alpha\n", encoding="utf-8")
             with mock.patch("urllib.request.urlopen") as urlopen:
                 code, _stdout, stderr = self._run(
                     [

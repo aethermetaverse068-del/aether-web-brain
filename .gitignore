@@ -2,3 +2,4 @@
 deny*.txt
 !deny.example.txt
 !tools/deny.example.txt
+*internal*

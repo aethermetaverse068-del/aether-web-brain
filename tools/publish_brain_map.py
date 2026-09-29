@@ -825,7 +825,7 @@ def main(argv: list[str] | None = None) -> int:
         print("publish refused", file=sys.stderr)
         print("rule: deny-file:required", file=sys.stderr)
         print("nothing was published", file=sys.stderr)
-        return 1
+        return 2
 
     allow_path = Path(args.allow_file)
     deny_path = Path(args.deny_file)
@@ -846,7 +846,7 @@ def main(argv: list[str] | None = None) -> int:
         print("publish refused", file=sys.stderr)
         print("rule: deny-file:required", file=sys.stderr)
         print("nothing was published", file=sys.stderr)
-        return 1
+        return 2
     try:
         allow_names = load_allow_file(allow_path)
         deny_tokens = load_deny_file(deny_path)
@@ -858,7 +858,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except UnicodeDecodeError:
         print("deny file must be UTF-8", file=sys.stderr)
-        return 1
+        return 2
+    if not deny_tokens:
+        print("publish refused", file=sys.stderr)
+        print("rule: deny-file:empty", file=sys.stderr)
+        print("nothing was published", file=sys.stderr)
+        return 2
 
     basenames = [path.name for path in input_paths]
     refusals = review_filenames(basenames, allow_names)

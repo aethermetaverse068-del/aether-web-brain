@@ -45,20 +45,20 @@ The generating machine does not need git credentials. The script talks to the Gi
 From a checkout of this repo, or from a copy of `tools/publish_brain_map.py` (stdlib only; no pip packages):
 
 ```sh
-cp tools/deny.example.txt /path/to/deny.txt   # keep this copy off the repo; add real tokens locally
+cp tools/deny.example.txt /path/to/deny.internal.txt   # keep this copy off the repo; add real tokens locally
 python3 tools/publish_brain_map.py /path/to/index.html \
   --allow-file tools/publish-allow.txt \
-  --deny-file /path/to/deny.txt
+  --deny-file /path/to/deny.internal.txt
 ```
 
-`--deny-file` is required. Without it the script exits 1 and does not call the network. The real deny list is not committed: `deny*.txt` is gitignored except `tools/deny.example.txt`, which contains only fictional lines.
+`--deny-file` is required, and the file must contain at least one usable token. If the flag is missing, or the file is empty or only comments and blank lines, the script exits 2 and does not call the network. Name the real local file so that it contains `internal` (for example `deny.internal.txt`). The allowlist hard-refuses any filename containing `internal`, so that file cannot be published even if it is passed in by mistake. `deny*.txt` and any path containing `internal` are gitignored. `tools/deny.example.txt` is the only tracked deny list, and it contains fictional lines.
 
 Optional companions (demo JSON and PNG screenshots) are extra arguments. Each basename must be listed in the allow file. A PNG also needs `--png-sha-file` (one sha256 per line); a screenshot whose digest is not listed is refused. Symlinks are refused for every input path and for the allow, deny, and sha files.
 
 ```sh
 python3 tools/publish_brain_map.py /path/to/index.html /path/to/brain-map.demo.json /path/to/overview.png \
   --allow-file /path/to/publish-allow.txt \
-  --deny-file /path/to/deny.txt \
+  --deny-file /path/to/deny.internal.txt \
   --png-sha-file /path/to/png-sha.txt
 ```
 
@@ -67,7 +67,7 @@ Check the leak guard and the publish plan with no network call:
 ```sh
 python3 tools/publish_brain_map.py /path/to/index.html \
   --allow-file tools/publish-allow.txt \
-  --deny-file /path/to/deny.txt \
+  --deny-file /path/to/deny.internal.txt \
   --dry-run
 ```
 
