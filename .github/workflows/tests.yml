@@ -1,0 +1,36 @@
+name: tests
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    # ubuntu-latest moves to Ubuntu 26 on 2026-10-19. Stay on 24.04.
+    # The scanner needs HTMLParser.RCDATA_CONTENT_ELEMENTS, not merely
+    # a 3.12+ minor. setup-python's patch version is printed below.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Show Python patch
+        run: python3 -c 'import sys, html.parser; print(sys.version); print("RCDATA_CONTENT_ELEMENTS", hasattr(html.parser.HTMLParser, "RCDATA_CONTENT_ELEMENTS"))'
+
+      - name: Run unit tests
+        run: python3 -m unittest discover -s tools -p 'test_*.py'

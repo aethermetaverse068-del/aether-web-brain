@@ -1,0 +1,9 @@
+# Basenames the publisher may upload into brain-map/.
+# One filename per line. Blank lines and # comments are ignored.
+# Hard-refused names are blocked even if they are added here:
+# anything containing "internal", names ending in .py/.sh/.md, and
+# brain-map.json, brain-map.prev.json, supabase-snapshot.json.
+#
+# PNG screenshots are allowed once each filename is listed below.
+index.html
+brain-map.demo.json

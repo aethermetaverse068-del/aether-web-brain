@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>示範腦圖</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Palatino, "Palatino Linotype", "Iowan Old Style", serif;
+      background: #f4efe4;
+      color: #221c14;
+    }
+    .banner {
+      position: sticky;
+      top: 0;
+      background: #9a3412;
+      color: #fffaf3;
+      text-align: center;
+      font-family: sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      padding: 0.75rem 1rem;
+    }
+    main {
+      max-width: 38rem;
+      margin: 0 auto;
+      padding: 2rem 1.2rem 3rem;
+    }
+    h1 {
+      font-size: 2rem;
+      font-weight: 500;
+      margin: 0 0 0.5rem;
+    }
+    .lede {
+      color: #5c5146;
+      line-height: 1.55;
+      margin: 0;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+      margin: 1.4rem 0 0;
+    }
+    li {
+      background: #fffdf8;
+      border: 1px solid #e4d8c4;
+      border-radius: 10px;
+      padding: 0.9rem 1rem;
+      margin: 0.7rem 0;
+      cursor: pointer;
+    }
+    li strong { display: block; font-size: 1.05rem; }
+    li span { color: #5c5146; }
+    li.open { border-color: #9a3412; }
+  </style>
+</head>
+<body>
+  <div class="banner" role="status">示範資料</div>
+  <main>
+    <h1>示範腦圖</h1>
+    <p class="lede">這是一份虛構頁面，用來確認靜態檔可以放到網站的 brain-map 目錄。人物、地點與主題都是編出來的，請不要當成真實紀錄。</p>
+    <ul id="nodes">
+      <li>
+        <strong>晨星市立圖書館</strong>
+        <span>主題：春季閱讀會的座位安排。</span>
+      </li>
+      <li>
+        <strong>北港社區廚房</strong>
+        <span>主題：週末共煮的菜單草稿。</span>
+      </li>
+      <li>
+        <strong>雲端風箏社</strong>
+        <span>主題：河岸公園的集合時間。</span>
+      </li>
+    </ul>
+  </main>
+  <script>
+    document.querySelectorAll("#nodes li").forEach(function (item) {
+      item.addEventListener("click", function () {
+        item.classList.toggle("open");
+      });
+    });
+  </script>
+</body>
+</html>
