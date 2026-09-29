@@ -53,7 +53,7 @@ python3 tools/publish_brain_map.py /path/to/index.html \
 
 `--deny-file` is required, and the file must contain at least one usable token. If the flag is missing, or the file is empty or only comments and blank lines, the script exits 2 and does not call the network. Name the real local file so that it contains `internal` (for example `deny.internal.txt`). The allowlist hard-refuses any filename containing `internal`, so that file cannot be published even if it is passed in by mistake. `deny*.txt` and any path containing `internal` are gitignored. `tools/deny.example.txt` is the only tracked deny list, and it contains fictional lines.
 
-Optional companions (demo JSON and PNG screenshots) are extra arguments. Each basename must be listed in the allow file. A PNG also needs `--png-sha-file` (one sha256 per line); a screenshot whose digest is not listed is refused. Symlinks are refused for every input path and for the allow, deny, and sha files.
+Optional companions (demo JSON and PNG screenshots) are extra arguments. Each basename must be listed in the allow file. A PNG also needs `--png-sha-file` (one sha256 per line); a screenshot whose digest is not listed is refused. A symlink anywhere in an input path, or in the allow, deny, or sha path (including a parent directory), is refused.
 
 ```sh
 python3 tools/publish_brain_map.py /path/to/index.html /path/to/brain-map.demo.json /path/to/overview.png \
@@ -94,9 +94,9 @@ Before anything leaves the machine the script scans the HTML, any JSON companion
 - absolute or internal paths: `/workspace`, `/home/`, `case-local`, `C:\`, `~/`
 - secret-looking strings: `sk-`, `ghp_`, `github_pat_`, `xox`, JWTs starting with `eyJ`, `sb_secret`, `service_role`, AWS keys starting with `AKIA`, and PEM `BEGIN … PRIVATE KEY` headers
 - email addresses
-- any `http://` or `https://` URL
-- the substring `supabase`, `*.supabase.co`, and a standalone 20-character lowercase project ref
-- cloud regions such as `ap-northeast-1` and `us-east-1`
+- any `http://` or `https://` URL, except the exact SVG namespace values `http://www.w3.org/2000/svg` and `http://www.w3.org/1999/xlink`
+- the substring `supabase`, `*.supabase.co`, and a standalone 20-character project ref (any case)
+- cloud regions in any case, including AWS names such as `ap-northeast-1` and `AP-NORTHEAST-2`, and GCP names such as `europe-west1` and `us-central1`
 - each token in `--deny-file`
 
 The guard does not scan this README.
@@ -110,3 +110,5 @@ Review the generated page and the `--dry-run` output yourself before the first p
 ```sh
 python3 -m unittest discover -s tools -p 'test_*.py' -v
 ```
+
+The same command runs in GitHub Actions on pull requests and pushes (`.github/workflows/tests.yml`). That workflow only runs the tests. It does not publish.

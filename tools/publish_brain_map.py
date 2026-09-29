@@ -74,6 +74,24 @@ def _email_accept(match: re.Match[str]) -> bool:
     return tld not in _EMAIL_SKIP_TLDS
 
 
+# Exact namespace values an inline SVG may carry. Nothing else under http(s) is allowed.
+_ALLOWED_URLS = frozenset(
+    {
+        "http://www.w3.org/2000/svg",
+        "http://www.w3.org/1999/xlink",
+    }
+)
+
+
+def _url_accept(match: re.Match[str]) -> bool:
+    """True when this http(s) URL is not an allowed SVG namespace value."""
+    text = match.string
+    end = match.start()
+    while end < len(text) and text[end] not in " \t\r\n\"'<>()&":
+        end += 1
+    return text[match.start() : end] not in _ALLOWED_URLS
+
+
 # Case-insensitive. Patterns consume the whole suspicious token so the
 # printed excerpt can be masked without leaving the rest of the secret beside it.
 _RULES: list[tuple[str, re.Pattern[str], object]] = [
@@ -163,13 +181,14 @@ _RULES: list[tuple[str, re.Pattern[str], object]] = [
         None,
     ),
     ("word:supabase", re.compile(r"supabase", re.I), None),
-    ("url", re.compile(r"https?://", re.I), None),
+    ("url", re.compile(r"https?://", re.I), _url_accept),
     (
         "supabase-ref",
-        re.compile(r"(?<![a-z0-9])[a-z0-9]{20}(?![a-z0-9])"),
+        re.compile(r"(?<![a-z0-9])[a-z0-9]{20}(?![a-z0-9])", re.I),
         None,
     ),
-    ("cloud-region", re.compile(r"\b[a-z]{2}-[a-z]+-\d\b"), None),
+    # AWS (ap-northeast-1) and GCP (europe-west1, us-central1), any case.
+    ("cloud-region", re.compile(r"\b[a-z]{2,}-[a-z]+-?\d\b", re.I), None),
 ]
 
 
@@ -597,15 +616,33 @@ def publish_files(
 
 
 def _is_symlink(path: Path) -> bool:
-    """True when path is a symlink. Uses islink and lstat, never is_file."""
+    """True when path or any component is a symlink.
+
+    The last component is not enough: linkdir/index.html is a regular file
+    when linkdir itself is a symlink. Compare realpath with the absolute
+    normalized path, and lstat each component.
+    """
     raw = os.fspath(path)
-    if os.path.islink(raw):
-        return True
+    absolute = os.path.normpath(os.path.abspath(raw))
     try:
-        mode = os.lstat(raw).st_mode
+        resolved = os.path.normpath(os.path.realpath(raw))
     except OSError:
-        return False
-    return stat.S_ISLNK(mode)
+        return True
+    if resolved != absolute:
+        return True
+    walked = Path(Path(absolute).parts[0])
+    for part in Path(absolute).parts[1:]:
+        walked = walked / part
+        target = os.fspath(walked)
+        if os.path.islink(target):
+            return True
+        try:
+            mode = os.lstat(target).st_mode
+        except OSError:
+            return False
+        if stat.S_ISLNK(mode):
+            return True
+    return False
 
 
 def _read_bytes_nofollow(path: Path) -> bytes:
@@ -736,7 +773,7 @@ def png_text_fragments(data: bytes) -> list[str]:
 
 
 def _read_regular_bytes(path: Path) -> bytes | None:
-    """Read path after rejecting symlinks via islink and lstat, before any is_file use."""
+    """Read path after rejecting a symlink anywhere in the path, before any is_file use."""
     if _is_symlink(path):
         _report_symlinks([path])
         return None

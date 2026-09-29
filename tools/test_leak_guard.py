@@ -67,6 +67,12 @@ class LeakGuardTests(unittest.TestCase):
                 "photo@2x.png",
                 "ordinary.example",
                 "workspace ideas",
+                "ABCDEFGHIJ012345678",
+                "abcdefghij01234567890",
+                "sha-256",
+                "utf-8",
+                "us-east",
+                "europewest1",
             ]
         )
         self.assertEqual(pub.scan_html(f"<p>{text}</p>"), [])
@@ -767,8 +773,11 @@ class SecurityReviewTests(unittest.TestCase):
             ("https://example.test/a", "url"),
             ("see supabase here", "word:supabase"),
             ("abcdefghij0123456789", "supabase-ref"),
+            ("ABCDEFGHIJ0123456789", "supabase-ref"),
             ("ap-northeast-1", "cloud-region"),
             ("us-east-1", "cloud-region"),
+            ("AP-NORTHEAST-2", "cloud-region"),
+            ("europe-west1", "cloud-region"),
         ]
         for body, rule in samples:
             with self.subTest(body=body):
@@ -838,6 +847,125 @@ class SecurityReviewTests(unittest.TestCase):
         self.assertIn("rule: symlink", stderr)
         self.assertIn("file: publish-allow.txt", stderr)
         self.assertEqual(stdout, "")
+
+    def test_symlink_parent_directory_is_refused(self) -> None:
+        for kind in ("html", "allow", "deny", "png-sha"):
+            with self.subTest(kind=kind):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    real = root / "real"
+                    real.mkdir()
+                    linkdir = root / "linkdir"
+                    os.symlink(real, linkdir, target_is_directory=True)
+                    page = root / "index.html"
+                    page.write_text(CLEAN_HTML, encoding="utf-8")
+                    allow = root / "publish-allow.txt"
+                    allow.write_text("index.html\n", encoding="utf-8")
+                    deny = root / "deny-local.txt"
+                    deny.write_text("# fictional\nfictional_table_alpha\n", encoding="utf-8")
+                    extra: list[str] = []
+                    if kind == "html":
+                        (real / "index.html").write_text(CLEAN_HTML, encoding="utf-8")
+                        page = linkdir / "index.html"
+                        self.assertFalse(os.path.islink(page))
+                        self.assertTrue(os.path.islink(linkdir))
+                    elif kind == "allow":
+                        (real / "publish-allow.txt").write_text("index.html\n", encoding="utf-8")
+                        allow = linkdir / "publish-allow.txt"
+                    elif kind == "deny":
+                        (real / "deny-local.txt").write_text(
+                            "# fictional\nfictional_table_alpha\n",
+                            encoding="utf-8",
+                        )
+                        deny = linkdir / "deny-local.txt"
+                    else:
+                        (real / "png-sha.txt").write_text(("ab" * 32) + "\n", encoding="utf-8")
+                        extra = ["--png-sha-file", str(linkdir / "png-sha.txt")]
+                    with mock.patch("urllib.request.urlopen") as urlopen:
+                        code, stdout, stderr = self._run(
+                            [
+                                str(page),
+                                "--allow-file",
+                                str(allow),
+                                "--deny-file",
+                                str(deny),
+                                "--dry-run",
+                                *extra,
+                            ],
+                            {pub.TOKEN_ENV: "github_pat_should_not_leave"},
+                        )
+                urlopen.assert_not_called()
+                self.assertEqual(code, 1, stderr)
+                self.assertIn("rule: symlink", stderr)
+                self.assertEqual(stdout, "")
+
+    def test_inline_svg_namespace_passes_and_other_urls_fail(self) -> None:
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" '
+            'xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">'
+            '<circle cx="2" cy="2" r="1"></circle>'
+            "</svg>"
+        )
+        page_html = CLEAN_HTML.replace("</body>", svg + "\n</body>")
+        self.assertEqual(pub.scan_html(page_html), [])
+        blocked = [
+            "<p>http://example.test/a</p>",
+            "<p>https://example.test/a</p>",
+            "<p>http://www.w3.org/2000/svg/extra</p>",
+            "<p>https://www.w3.org/2000/svg</p>",
+            '<svg xmlns="http://www.w3.org/2000/svg?x=1"></svg>',
+        ]
+        for html in blocked:
+            with self.subTest(html=html):
+                hits = pub.scan_html(html)
+                self.assertIn("url", {hit.rule for hit in hits})
+                joined = " ".join(hit.excerpt for hit in hits)
+                self.assertNotIn("example.test", joined)
+                self.assertNotIn("w3.org", joined)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            page = root / "index.html"
+            page.write_text(page_html, encoding="utf-8")
+            allow = root / "publish-allow.txt"
+            allow.write_text("index.html\n", encoding="utf-8")
+            deny = root / "deny-local.txt"
+            deny.write_text("# fictional\nfictional_table_alpha\n", encoding="utf-8")
+            with mock.patch("urllib.request.urlopen") as urlopen:
+                code, stdout, stderr = self._run(
+                    [
+                        str(page),
+                        "--allow-file",
+                        str(allow),
+                        "--deny-file",
+                        str(deny),
+                        "--dry-run",
+                    ],
+                    {pub.TOKEN_ENV: "github_pat_should_not_leave"},
+                )
+            urlopen.assert_not_called()
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("leak guard: ok", stdout)
+            page.write_text(
+                CLEAN_HTML.replace("</body>", "<p>https://example.test/a</p></body>"),
+                encoding="utf-8",
+            )
+            with mock.patch("urllib.request.urlopen") as urlopen:
+                code, stdout, stderr = self._run(
+                    [
+                        str(page),
+                        "--allow-file",
+                        str(allow),
+                        "--deny-file",
+                        str(deny),
+                        "--dry-run",
+                    ],
+                    {pub.TOKEN_ENV: "github_pat_should_not_leave"},
+                )
+            urlopen.assert_not_called()
+            self.assertEqual(code, 1, stderr)
+            self.assertIn("rule: url", stderr)
+            self.assertNotIn("https://example.test/a", stderr)
+            self.assertEqual(stdout, "")
 
     def test_png_text_chunks_and_sha_allowlist(self) -> None:
         self.assertEqual(pub.png_text_fragments(MIN_PNG), [])
