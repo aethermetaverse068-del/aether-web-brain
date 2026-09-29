@@ -10,15 +10,18 @@ from __future__ import annotations
 
 import argparse
 import base64
+import errno
 import hashlib
 import html as html_lib
 import json
 import os
 import re
+import stat
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -159,6 +162,14 @@ _RULES: list[tuple[str, re.Pattern[str], object]] = [
         ),
         None,
     ),
+    ("word:supabase", re.compile(r"supabase", re.I), None),
+    ("url", re.compile(r"https?://", re.I), None),
+    (
+        "supabase-ref",
+        re.compile(r"(?<![a-z0-9])[a-z0-9]{20}(?![a-z0-9])"),
+        None,
+    ),
+    ("cloud-region", re.compile(r"\b[a-z]{2}-[a-z]+-\d\b"), None),
 ]
 
 
@@ -196,7 +207,7 @@ def _first_match(
 
 def _load_token_lines(path: Path) -> list[str]:
     """Load one token per line. Blank lines and # comments are ignored."""
-    text = path.read_text(encoding="utf-8-sig")
+    text = _read_bytes_nofollow(path).decode("utf-8-sig")
     tokens: list[str] = []
     seen: set[str] = set()
     for line in text.splitlines():
@@ -219,6 +230,16 @@ def load_deny_file(path: Path) -> list[str]:
 def load_allow_file(path: Path) -> list[str]:
     """Load allowlisted filenames, one per line. Blank lines and # comments are ignored."""
     return _load_token_lines(path)
+
+
+def load_sha_file(path: Path) -> set[str]:
+    """Load PNG sha256 hex digests, one per line. Blank lines and # comments are ignored."""
+    shas: set[str] = set()
+    for token in _load_token_lines(path):
+        if re.fullmatch(r"[0-9a-fA-F]{64}", token) is None:
+            raise ValueError("sha line")
+        shas.add(token.casefold())
+    return shas
 
 
 # Names the publisher may copy. Anything else is refused even if allowlisted.
@@ -509,23 +530,51 @@ class GitHubClient:
             raise PublishError("GitHub API returned an empty commit")
         return _expect_sha(body.get("sha"))
 
-    def update_branch(self, commit_sha: str) -> None:
+    def create_branch(self, branch: str, commit_sha: str) -> None:
+        """Create a new branch ref. This never updates or force-pushes main."""
         self._request(
-            "PATCH",
-            f"/git/refs/heads/{BRANCH}",
-            {"sha": commit_sha, "force": False},
+            "POST",
+            "/git/refs",
+            {"ref": f"refs/heads/{branch}", "sha": commit_sha},
         )
+
+    def open_pull_request(self, branch: str, stamp: str) -> str:
+        body = self._request(
+            "POST",
+            "/pulls",
+            {
+                "title": f"Publish brain map {stamp}",
+                "head": branch,
+                "base": BRANCH,
+                "body": (
+                    "Automated brain-map publish. "
+                    "Review the diff before merging into main."
+                ),
+            },
+        )
+        if body is None:
+            raise PublishError("GitHub API returned an empty pull request")
+        url = body.get("html_url")
+        if not isinstance(url, str) or not url.startswith("https://"):
+            raise PublishError("GitHub API returned an unexpected pull request URL")
+        return url
+
+
+def publish_stamp(moment: datetime) -> str:
+    """UTC timestamp safe to use in a git branch name (no colons)."""
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H%M%SZ")
 
 
 def publish_files(
     token: str,
     files: list[tuple[str, bytes]],
     published_bytes: bytes,
+    now: datetime,
 ) -> str:
-    """Push allowlisted brain-map files. Return 'unchanged' or the new commit sha.
+    """Open a pull request for the allowlisted files.
 
-    The tree is based on the current branch tip, so every other path stays.
-    ``files`` is a list of (repo path, bytes). published.json is added here.
+    Return 'unchanged' or the pull request URL. main is only read. The new
+    commit is attached to brain-map-publish/<timestamp> and is not force-pushed.
     """
     client = GitHubClient(token)
     changed = False
@@ -541,15 +590,178 @@ def publish_files(
     entries.append((JSON_PATH, client.create_blob(published_bytes)))
     new_tree = client.create_tree(tree_sha, entries)
     commit_sha = client.create_commit(new_tree, parent_sha)
-    client.update_branch(commit_sha)
-    return commit_sha
+    stamp = publish_stamp(now)
+    branch = f"brain-map-publish/{stamp}"
+    client.create_branch(branch, commit_sha)
+    return client.open_pull_request(branch, stamp)
+
+
+def _is_symlink(path: Path) -> bool:
+    """True when path is a symlink. Uses islink and lstat, never is_file."""
+    raw = os.fspath(path)
+    if os.path.islink(raw):
+        return True
+    try:
+        mode = os.lstat(raw).st_mode
+    except OSError:
+        return False
+    return stat.S_ISLNK(mode)
+
+
+def _read_bytes_nofollow(path: Path) -> bytes:
+    """Read a regular file. O_NOFOLLOW refuses a symlink that appears after the check."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(os.fspath(path), flags)
+    except OSError as err:
+        if err.errno == errno.ELOOP:
+            raise OSError(errno.ELOOP, "symlink") from None
+        raise
+    with os.fdopen(fd, "rb") as handle:
+        return handle.read()
+
+
+def _report_symlinks(paths: list[Path]) -> None:
+    print("publish refused", file=sys.stderr)
+    for path in paths:
+        print("rule: symlink", file=sys.stderr)
+        print(f"file: {path.name}", file=sys.stderr)
+    print("nothing was published", file=sys.stderr)
+
+
+class PngParseError(Exception):
+    """A PNG text chunk could not be parsed. The message never includes chunk bytes."""
+
+
+def _decode_text_chunk(chunk: bytes) -> str:
+    sep = chunk.find(b"\x00")
+    if sep <= 0 or sep > 79:
+        raise PngParseError("tEXt")
+    keyword = chunk[:sep].decode("latin-1")
+    text = chunk[sep + 1 :].decode("latin-1")
+    return keyword + "\n" + text
+
+
+def _decode_ztxt_chunk(chunk: bytes) -> str:
+    sep = chunk.find(b"\x00")
+    if sep <= 0 or sep > 79:
+        raise PngParseError("zTXt")
+    keyword = chunk[:sep].decode("latin-1")
+    rest = chunk[sep + 1 :]
+    if len(rest) < 2 or rest[0] != 0:
+        raise PngParseError("zTXt")
+    try:
+        raw = zlib.decompress(rest[1:])
+    except zlib.error:
+        raise PngParseError("zTXt") from None
+    return keyword + "\n" + raw.decode("latin-1")
+
+
+def _decode_itxt_chunk(chunk: bytes) -> str:
+    sep = chunk.find(b"\x00")
+    if sep <= 0 or sep > 79:
+        raise PngParseError("iTXt")
+    keyword = chunk[:sep]
+    rest = chunk[sep + 1 :]
+    if len(rest) < 2:
+        raise PngParseError("iTXt")
+    flag = rest[0]
+    method = rest[1]
+    rest = rest[2:]
+    lang_sep = rest.find(b"\x00")
+    if lang_sep < 0:
+        raise PngParseError("iTXt")
+    language = rest[:lang_sep]
+    rest = rest[lang_sep + 1 :]
+    trans_sep = rest.find(b"\x00")
+    if trans_sep < 0:
+        raise PngParseError("iTXt")
+    translated = rest[:trans_sep]
+    text = rest[trans_sep + 1 :]
+    if flag not in (0, 1) or method != 0:
+        raise PngParseError("iTXt")
+    if flag == 1:
+        try:
+            text = zlib.decompress(text)
+        except zlib.error:
+            raise PngParseError("iTXt") from None
+    try:
+        parts = [
+            keyword.decode("latin-1"),
+            language.decode("latin-1"),
+            translated.decode("utf-8"),
+            text.decode("utf-8"),
+        ]
+    except UnicodeDecodeError:
+        raise PngParseError("iTXt") from None
+    return "\n".join(parts)
+
+
+def png_text_fragments(data: bytes) -> list[str]:
+    """Return the text of every tEXt, zTXt, and iTXt chunk.
+
+    A text chunk that cannot be parsed, including a failed inflate, raises
+    PngParseError. The PNG signature is required.
+    """
+    if not data.startswith(PNG_MAGIC):
+        raise PngParseError("signature")
+    pos = 8
+    texts: list[str] = []
+    saw_iend = False
+    while pos + 8 <= len(data):
+        length = int.from_bytes(data[pos : pos + 4], "big")
+        ctype = data[pos + 4 : pos + 8]
+        pos += 8
+        if pos + length + 4 > len(data):
+            raise PngParseError("truncated")
+        chunk = data[pos : pos + length]
+        crc = int.from_bytes(data[pos + length : pos + length + 4], "big")
+        pos += length + 4
+        if ctype in (b"tEXt", b"zTXt", b"iTXt"):
+            actual = zlib.crc32(ctype + chunk) & 0xFFFFFFFF
+            if actual != crc:
+                raise PngParseError("crc")
+            if ctype == b"tEXt":
+                texts.append(_decode_text_chunk(chunk))
+            elif ctype == b"zTXt":
+                texts.append(_decode_ztxt_chunk(chunk))
+            else:
+                texts.append(_decode_itxt_chunk(chunk))
+        if ctype == b"IEND":
+            saw_iend = True
+            break
+    if not saw_iend:
+        raise PngParseError("iend")
+    return texts
+
+
+def _read_regular_bytes(path: Path) -> bytes | None:
+    """Read path after rejecting symlinks via islink and lstat, before any is_file use."""
+    if _is_symlink(path):
+        _report_symlinks([path])
+        return None
+    try:
+        info = os.lstat(path)
+    except OSError:
+        print(f"not a file: {path}", file=sys.stderr)
+        return None
+    if not stat.S_ISREG(info.st_mode):
+        print(f"not a file: {path}", file=sys.stderr)
+        return None
+    try:
+        return _read_bytes_nofollow(path)
+    except OSError as err:
+        if err.errno == errno.ELOOP:
+            _report_symlinks([path])
+            return None
+        print(f"not a file: {path}", file=sys.stderr)
+        return None
 
 
 def _read_text_file(path: Path, label: str) -> tuple[bytes, str] | None:
-    if not path.is_file():
-        print(f"not a file: {path}", file=sys.stderr)
+    data = _read_regular_bytes(path)
+    if data is None:
         return None
-    data = path.read_bytes()
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
@@ -559,10 +771,9 @@ def _read_text_file(path: Path, label: str) -> tuple[bytes, str] | None:
 
 
 def _read_png(path: Path) -> bytes | None:
-    if not path.is_file():
-        print(f"not a file: {path}", file=sys.stderr)
+    data = _read_regular_bytes(path)
+    if data is None:
         return None
-    data = path.read_bytes()
     if not data.startswith(PNG_MAGIC):
         print(f"not a png: {path.name}", file=sys.stderr)
         return None
@@ -594,7 +805,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--deny-file",
-        help="Extra deny list, one token per line (not committed; applied locally)",
+        help="Required local deny list, one token per line. Never commit the real file.",
     )
     parser.add_argument(
         "--allow-file",
@@ -604,15 +815,51 @@ def main(argv: list[str] | None = None) -> int:
             "Only index.html, brain-map.demo.json, and PNG screenshots may be listed."
         ),
     )
+    parser.add_argument(
+        "--png-sha-file",
+        help="Required when publishing PNGs. One sha256 hex digest per line.",
+    )
     args = parser.parse_args(argv)
 
+    if not args.deny_file:
+        print("publish refused", file=sys.stderr)
+        print("rule: deny-file:required", file=sys.stderr)
+        print("nothing was published", file=sys.stderr)
+        return 1
+
     allow_path = Path(args.allow_file)
-    if not allow_path.is_file():
+    deny_path = Path(args.deny_file)
+    sha_path = Path(args.png_sha_file) if args.png_sha_file else None
+    input_paths = [Path(args.html_path), *[Path(item) for item in args.extra_paths]]
+    watched = [*input_paths, allow_path, deny_path]
+    if sha_path is not None:
+        watched.append(sha_path)
+    symlinks = [path for path in watched if _is_symlink(path)]
+    if symlinks:
+        _report_symlinks(symlinks)
+        return 1
+
+    if _classify_missing(allow_path):
         print(f"allow file not found: {allow_path}", file=sys.stderr)
         return 2
-    allow_names = load_allow_file(allow_path)
+    if _classify_missing(deny_path):
+        print("publish refused", file=sys.stderr)
+        print("rule: deny-file:required", file=sys.stderr)
+        print("nothing was published", file=sys.stderr)
+        return 1
+    try:
+        allow_names = load_allow_file(allow_path)
+        deny_tokens = load_deny_file(deny_path)
+    except OSError as err:
+        if err.errno == errno.ELOOP:
+            _report_symlinks([allow_path, deny_path])
+            return 1
+        print(f"not a file: {allow_path}", file=sys.stderr)
+        return 2
+    except UnicodeDecodeError:
+        print("deny file must be UTF-8", file=sys.stderr)
+        return 1
 
-    input_paths = [Path(args.html_path), *[Path(item) for item in args.extra_paths]]
     basenames = [path.name for path in input_paths]
     refusals = review_filenames(basenames, allow_names)
     if basenames[0].casefold() != "index.html":
@@ -621,6 +868,35 @@ def main(argv: list[str] | None = None) -> int:
         report_filename_refusals(refusals)
         return 1
 
+    publishing_png = any(name.casefold().endswith(".png") for name in basenames)
+    sha_allow: set[str] = set()
+    if publishing_png:
+        if sha_path is None:
+            print("publish refused", file=sys.stderr)
+            print("rule: png:sha-file-required", file=sys.stderr)
+            print("nothing was published", file=sys.stderr)
+            return 1
+        if _classify_missing(sha_path):
+            print("publish refused", file=sys.stderr)
+            print("rule: png:sha-file-required", file=sys.stderr)
+            print("nothing was published", file=sys.stderr)
+            return 1
+        try:
+            sha_allow = load_sha_file(sha_path)
+        except ValueError:
+            print("publish refused", file=sys.stderr)
+            print("rule: png:sha-file", file=sys.stderr)
+            print("nothing was published", file=sys.stderr)
+            return 1
+        except OSError as err:
+            if err.errno == errno.ELOOP:
+                _report_symlinks([sha_path])
+                return 1
+            print("publish refused", file=sys.stderr)
+            print("rule: png:sha-file-required", file=sys.stderr)
+            print("nothing was published", file=sys.stderr)
+            return 1
+
     loaded_files: list[tuple[str, bytes]] = []
     texts: list[str] = []
     for path in input_paths:
@@ -628,23 +904,32 @@ def main(argv: list[str] | None = None) -> int:
         if name.casefold().endswith(".png"):
             png = _read_png(path)
             if png is None:
-                return 2
+                return 1 if _is_symlink(path) else 2
+            try:
+                fragments = png_text_fragments(png)
+            except PngParseError:
+                print("publish refused", file=sys.stderr)
+                print("rule: png:text-chunk-parse", file=sys.stderr)
+                print(f"file: {name}", file=sys.stderr)
+                print("nothing was published", file=sys.stderr)
+                return 1
+            texts.extend(fragments)
+            digest = hashlib.sha256(png).hexdigest()
+            if digest not in sha_allow:
+                print("publish refused", file=sys.stderr)
+                print("rule: png:sha-not-listed", file=sys.stderr)
+                print(f"file: {name}", file=sys.stderr)
+                print(f"sha256: {digest}", file=sys.stderr)
+                print("nothing was published", file=sys.stderr)
+                return 1
             loaded_files.append((_repo_path(name), png))
             continue
         loaded = _read_text_file(path, name)
         if loaded is None:
-            return 2
+            return 1 if _is_symlink(path) else 2
         data, text = loaded
         loaded_files.append((_repo_path(name), data))
         texts.append(text)
-
-    deny_tokens: list[str] = []
-    if args.deny_file:
-        deny_path = Path(args.deny_file)
-        if not deny_path.is_file():
-            print(f"deny file not found: {deny_path}", file=sys.stderr)
-            return 2
-        deny_tokens = load_deny_file(deny_path)
 
     hits: list[GuardHit] = []
     for text in texts:
@@ -654,7 +939,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     html_bytes = loaded_files[0][1]
-    published = build_published_json(html_bytes)
+    now = datetime.now(timezone.utc)
+    published = build_published_json(html_bytes, now)
     digest = hashlib.sha256(html_bytes).hexdigest()
     if args.dry_run:
         print("leak guard: ok")
@@ -673,7 +959,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{TOKEN_ENV} is not set", file=sys.stderr)
         return 2
     try:
-        result = publish_files(token, loaded_files, published)
+        result = publish_files(token, loaded_files, published, now)
     except PublishError as err:
         print(_scrub(str(err), token), file=sys.stderr)
         return 2
@@ -685,9 +971,19 @@ def main(argv: list[str] | None = None) -> int:
         for repo_path, _data in loaded_files:
             print(f"published: {repo_path}")
         print(f"published: {JSON_PATH}")
-        print(f"commit: {result}")
+        print(f"branch: brain-map-publish/{publish_stamp(now)}")
+        print(f"pull request: {result}")
     print(f"pages url: {PAGES_URL}")
     return 0
+
+
+def _classify_missing(path: Path) -> bool:
+    """True when path is not a regular file. Caller has already rejected symlinks."""
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return True
+    return not stat.S_ISREG(info.st_mode)
 
 
 if __name__ == "__main__":

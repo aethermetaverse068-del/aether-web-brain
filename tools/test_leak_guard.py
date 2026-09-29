@@ -10,6 +10,7 @@ import json
 import os
 import tempfile
 import unittest
+import zlib
 import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,7 @@ import publish_brain_map as pub
 ROOT = Path(__file__).resolve().parents[1]
 PLACEHOLDER = ROOT / "brain-map" / "index.html"
 ALLOW = ROOT / "tools" / "publish-allow.txt"
+DENY = ROOT / "tools" / "deny.example.txt"
 MIN_PNG = bytes.fromhex(
     "89504e470d0a1a0a"
     "0000000d49484452000000010000000108060000001f15c489"
@@ -63,7 +65,7 @@ class LeakGuardTests(unittest.TestCase):
                 "reik",
                 "md5 d41d8cd98f00b204e9800998ecf8427e",
                 "photo@2x.png",
-                "notsupabase.co",
+                "ordinary.example",
                 "workspace ideas",
             ]
         )
@@ -259,7 +261,7 @@ class PublishPlanTests(unittest.TestCase):
         token = "github_pat_should_not_leave"
         with mock.patch("urllib.request.urlopen") as urlopen:
             code, stdout, stderr = self._run(
-                [str(PLACEHOLDER), "--allow-file", str(ALLOW), "--dry-run"],
+                [str(PLACEHOLDER), "--allow-file", str(ALLOW), "--deny-file", str(DENY), "--dry-run"],
                 {pub.TOKEN_ENV: token},
             )
         urlopen.assert_not_called()
@@ -300,7 +302,7 @@ class PublishPlanTests(unittest.TestCase):
             page.write_text("<p>aether</p>", encoding="utf-8")
             with mock.patch("urllib.request.urlopen") as urlopen:
                 code, stdout, stderr = self._run(
-                    [str(page), "--allow-file", str(ALLOW)],
+                    [str(page), "--allow-file", str(ALLOW), "--deny-file", str(DENY)],
                     {pub.TOKEN_ENV: "github_pat_should_not_leave"},
                 )
         urlopen.assert_not_called()
@@ -320,7 +322,7 @@ class PublishPlanTests(unittest.TestCase):
             with mock.patch.dict(os.environ, env, clear=True):
                 with mock.patch("urllib.request.urlopen") as urlopen:
                     code, _stdout, stderr = self._run(
-                        [str(page), "--allow-file", str(ALLOW)],
+                        [str(page), "--allow-file", str(ALLOW), "--deny-file", str(DENY)],
                         env={},
                     )
         urlopen.assert_not_called()
@@ -380,11 +382,27 @@ class PublishPlanTests(unittest.TestCase):
                 self.assertEqual(payload["parents"], ["a" * 40])
                 self.assertNotIn("<p>", payload["message"])
                 return _Resp({"sha": "d" * 40})
-            if method == "PATCH" and url.endswith("/git/refs/heads/main"):
+            if method == "PATCH":
+                raise AssertionError("publish must not update main")
+            if method == "POST" and url.endswith("/git/refs"):
                 assert payload is not None
+                self.assertNotIn("force", payload)
+                self.assertTrue(str(payload["ref"]).startswith("refs/heads/brain-map-publish/"))
+                self.assertNotEqual(payload["ref"], "refs/heads/main")
                 self.assertEqual(payload["sha"], "d" * 40)
-                self.assertFalse(payload["force"])
-                return _Resp({"ref": "refs/heads/main", "object": {"sha": "d" * 40}})
+                return _Resp({"ref": payload["ref"], "object": {"sha": "d" * 40}})
+            if method == "POST" and url.endswith("/pulls"):
+                assert payload is not None
+                self.assertEqual(payload["base"], "main")
+                self.assertTrue(str(payload["head"]).startswith("brain-map-publish/"))
+                self.assertTrue(str(payload["title"]).startswith("Publish brain map "))
+                self.assertNotIn("<p>", payload.get("body", ""))
+                return _Resp(
+                    {
+                        "html_url": "https://github.com/aethermetaverse068-del/aether-web-brain/pull/99",
+                        "number": 99,
+                    }
+                )
             raise AssertionError(f"unexpected {method} {url}")
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -392,12 +410,17 @@ class PublishPlanTests(unittest.TestCase):
             page.write_bytes(html)
             with mock.patch("urllib.request.urlopen", urlopen):
                 code, stdout, stderr = self._run(
-                    [str(page), "--allow-file", str(ALLOW)],
+                    [str(page), "--allow-file", str(ALLOW), "--deny-file", str(DENY)],
                     {pub.TOKEN_ENV: token},
                 )
         self.assertEqual(code, 0, stderr)
-        self.assertIn("commit: " + ("d" * 40), stdout)
+        self.assertIn(
+            "pull request: https://github.com/aethermetaverse068-del/aether-web-brain/pull/99",
+            stdout,
+        )
+        self.assertIn("branch: brain-map-publish/", stdout)
         self.assertIn(pub.PAGES_URL, stdout)
+        self.assertFalse(any(method == "PATCH" for method, _url, _payload, _auth in calls))
         self.assertNotIn(token, stdout)
         self.assertNotIn(token, stderr)
         blob_payloads = [
@@ -411,7 +434,7 @@ class PublishPlanTests(unittest.TestCase):
         methods = [(method, url.split("/repos/", 1)[-1]) for method, url, _p, _a in calls]
         self.assertEqual(
             [item[0] for item in methods],
-            ["GET", "GET", "GET", "POST", "POST", "POST", "POST", "PATCH"],
+            ["GET", "GET", "GET", "POST", "POST", "POST", "POST", "POST", "POST"],
         )
 
     def test_unchanged_remote_skips_commit(self) -> None:
@@ -433,7 +456,7 @@ class PublishPlanTests(unittest.TestCase):
             page.write_bytes(html)
             with mock.patch("urllib.request.urlopen", urlopen):
                 code, stdout, stderr = self._run(
-                    [str(page), "--allow-file", str(ALLOW)],
+                    [str(page), "--allow-file", str(ALLOW), "--deny-file", str(DENY)],
                     {pub.TOKEN_ENV: token},
                 )
         self.assertEqual(code, 0, stderr)
@@ -464,7 +487,7 @@ class PublishPlanTests(unittest.TestCase):
             page.write_bytes(html)
             with mock.patch("urllib.request.urlopen", urlopen):
                 code, stdout, stderr = self._run(
-                    [str(page), "--allow-file", str(ALLOW)],
+                    [str(page), "--allow-file", str(ALLOW), "--deny-file", str(DENY)],
                     {pub.TOKEN_ENV: token},
                 )
         self.assertEqual(code, 2)
@@ -549,7 +572,7 @@ class AllowlistTests(unittest.TestCase):
             allow.write_text("index.html\n", encoding="utf-8")
             with mock.patch("urllib.request.urlopen") as urlopen:
                 code, stdout, stderr = self._run(
-                    [str(page), str(extra), "--allow-file", str(allow)],
+                    [str(page), str(extra), "--allow-file", str(allow), "--deny-file", str(DENY)],
                     {pub.TOKEN_ENV: "github_pat_should_not_leave"},
                 )
         urlopen.assert_not_called()
@@ -580,7 +603,15 @@ class AllowlistTests(unittest.TestCase):
                 (root / name).write_text("clean fictional text\n", encoding="utf-8")
                 with mock.patch("urllib.request.urlopen") as urlopen:
                     code, stdout, stderr = self._run(
-                        [str(page), str(root / name), "--allow-file", str(allow), "--dry-run"],
+                        [
+                            str(page),
+                            str(root / name),
+                            "--allow-file",
+                            str(allow),
+                            "--deny-file",
+                            str(DENY),
+                            "--dry-run",
+                        ],
                         {pub.TOKEN_ENV: "github_pat_should_not_leave"},
                     )
                 urlopen.assert_not_called()
@@ -605,9 +636,22 @@ class AllowlistTests(unittest.TestCase):
                 "# publish set\nindex.html\nbrain-map.demo.json\noverview.png\n",
                 encoding="utf-8",
             )
+            sha_file = root / "png-sha.txt"
+            sha_file.write_text(hashlib.sha256(MIN_PNG).hexdigest() + "\n", encoding="utf-8")
             with mock.patch("urllib.request.urlopen") as urlopen:
                 code, stdout, stderr = self._run(
-                    [str(page), str(demo), str(shot), "--allow-file", str(allow), "--dry-run"]
+                    [
+                        str(page),
+                        str(demo),
+                        str(shot),
+                        "--allow-file",
+                        str(allow),
+                        "--deny-file",
+                        str(DENY),
+                        "--png-sha-file",
+                        str(sha_file),
+                        "--dry-run",
+                    ]
                 )
         urlopen.assert_not_called()
         self.assertEqual(code, 0, stderr)
@@ -627,13 +671,283 @@ class AllowlistTests(unittest.TestCase):
             allow.write_text("index.html\nbrain-map.demo.json\n", encoding="utf-8")
             with mock.patch("urllib.request.urlopen") as urlopen:
                 code, _stdout, stderr = self._run(
-                    [str(page), str(demo), "--allow-file", str(allow), "--dry-run"],
+                    [
+                        str(page),
+                        str(demo),
+                        "--allow-file",
+                        str(allow),
+                        "--deny-file",
+                        str(DENY),
+                        "--dry-run",
+                    ],
                     {pub.TOKEN_ENV: "github_pat_should_not_leave"},
                 )
         urlopen.assert_not_called()
         self.assertEqual(code, 1)
         self.assertIn("rule: word:claude", stderr)
         self.assertNotIn("claude", stderr.replace("rule: word:claude", ""))
+
+
+def _png_chunk(tag: bytes, data: bytes) -> bytes:
+    crc = zlib.crc32(tag + data) & 0xFFFFFFFF
+    return len(data).to_bytes(4, "big") + tag + data + crc.to_bytes(4, "big")
+
+
+def _png_with_chunk(tag: bytes, data: bytes) -> bytes:
+    marker = b"IEND"
+    index = MIN_PNG.rfind(marker) - 4
+    return MIN_PNG[:index] + _png_chunk(tag, data) + MIN_PNG[index:]
+
+
+class SecurityReviewTests(unittest.TestCase):
+    def _run(self, args: list[str], env: dict[str, str] | None = None) -> tuple[int, str, str]:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.dict(os.environ, env or {}, clear=False):
+            with mock.patch("sys.stdout", stdout), mock.patch("sys.stderr", stderr):
+                code = pub.main(args)
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def _page(self, root: Path, body: str) -> tuple[Path, Path, Path]:
+        page = root / "index.html"
+        page.write_text(f"<p>{body}</p>", encoding="utf-8")
+        allow = root / "publish-allow.txt"
+        allow.write_text("index.html\n", encoding="utf-8")
+        deny = root / "deny-local.txt"
+        deny.write_text("# fictional\nfictional_table_alpha\n", encoding="utf-8")
+        return page, allow, deny
+
+    def test_deny_file_is_required_before_network(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            page, allow, _deny = self._page(root, "clean fictional page")
+            with mock.patch("urllib.request.urlopen") as urlopen:
+                code, stdout, stderr = self._run(
+                    [str(page), "--allow-file", str(allow), "--dry-run"],
+                    {pub.TOKEN_ENV: "github_pat_should_not_leave"},
+                )
+        urlopen.assert_not_called()
+        self.assertEqual(code, 1)
+        self.assertIn("rule: deny-file:required", stderr)
+        self.assertIn("nothing was published", stderr)
+        self.assertEqual(stdout, "")
+
+    def test_builtin_rules_block_before_network(self) -> None:
+        samples = [
+            ("http://example.test/a", "url"),
+            ("https://example.test/a", "url"),
+            ("see supabase here", "word:supabase"),
+            ("abcdefghij0123456789", "supabase-ref"),
+            ("ap-northeast-1", "cloud-region"),
+            ("us-east-1", "cloud-region"),
+        ]
+        for body, rule in samples:
+            with self.subTest(body=body):
+                with tempfile.TemporaryDirectory() as tmp:
+                    page, allow, deny = self._page(Path(tmp), body)
+                    with mock.patch("urllib.request.urlopen") as urlopen:
+                        code, stdout, stderr = self._run(
+                            [
+                                str(page),
+                                "--allow-file",
+                                str(allow),
+                                "--deny-file",
+                                str(deny),
+                                "--dry-run",
+                            ],
+                            {pub.TOKEN_ENV: "github_pat_should_not_leave"},
+                        )
+                urlopen.assert_not_called()
+                self.assertEqual(code, 1, stderr)
+                self.assertIn(f"rule: {rule}", stderr)
+                self.assertIn("nothing was published", stderr)
+                self.assertNotIn(body, stderr)
+                self.assertEqual(stdout, "")
+
+    def test_symlink_input_and_allow_file_are_refused(self) -> None:
+        secret = "claude-hidden-token"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            real = root / "real-index.html"
+            real.write_text(f"<p>{secret}</p>", encoding="utf-8")
+            link = root / "index.html"
+            os.symlink(real, link)
+            allow = root / "publish-allow.txt"
+            allow.write_text("index.html\n", encoding="utf-8")
+            deny = root / "deny-local.txt"
+            deny.write_text("# none\n", encoding="utf-8")
+            self.assertTrue(os.path.islink(link))
+            with mock.patch("urllib.request.urlopen") as urlopen:
+                code, stdout, stderr = self._run(
+                    [str(link), "--allow-file", str(allow), "--deny-file", str(deny)],
+                    {pub.TOKEN_ENV: "github_pat_should_not_leave"},
+                )
+        urlopen.assert_not_called()
+        self.assertEqual(code, 1)
+        self.assertIn("rule: symlink", stderr)
+        self.assertIn("file: index.html", stderr)
+        self.assertNotIn(secret, stderr)
+        self.assertEqual(stdout, "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            page = root / "index.html"
+            page.write_text(CLEAN_HTML, encoding="utf-8")
+            real_allow = root / "allow-real.txt"
+            real_allow.write_text("index.html\n", encoding="utf-8")
+            allow = root / "publish-allow.txt"
+            os.symlink(real_allow, allow)
+            deny = root / "deny-local.txt"
+            deny.write_text("# none\n", encoding="utf-8")
+            with mock.patch("urllib.request.urlopen") as urlopen:
+                code, stdout, stderr = self._run(
+                    [str(page), "--allow-file", str(allow), "--deny-file", str(deny), "--dry-run"],
+                    {pub.TOKEN_ENV: "github_pat_should_not_leave"},
+                )
+        urlopen.assert_not_called()
+        self.assertEqual(code, 1)
+        self.assertIn("rule: symlink", stderr)
+        self.assertIn("file: publish-allow.txt", stderr)
+        self.assertEqual(stdout, "")
+
+    def test_png_text_chunks_and_sha_allowlist(self) -> None:
+        self.assertEqual(pub.png_text_fragments(MIN_PNG), [])
+        text_png = _png_with_chunk(b"tEXt", b"Note\x00claude-hidden-token")
+        ztxt_png = _png_with_chunk(
+            b"zTXt",
+            b"Note\x00\x00" + zlib.compress(b"supabase-hidden"),
+        )
+        itxt_png = _png_with_chunk(
+            b"iTXt",
+            b"Note\x00\x01\x00en\x00\x00" + zlib.compress(b"https://example.test/hidden-path"),
+        )
+        bad_png = _png_with_chunk(b"zTXt", b"Note\x00\x00this-is-not-zlib")
+        cases = [
+            (text_png, "word:claude", "claude-hidden-token"),
+            (ztxt_png, "word:supabase", "supabase-hidden"),
+            (itxt_png, "url", "https://example.test/hidden-path"),
+        ]
+        for png_bytes, rule, secret in cases:
+            with self.subTest(rule=rule):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    page = root / "index.html"
+                    page.write_text(CLEAN_HTML, encoding="utf-8")
+                    shot = root / "overview.png"
+                    shot.write_bytes(png_bytes)
+                    allow = root / "publish-allow.txt"
+                    allow.write_text("index.html\noverview.png\n", encoding="utf-8")
+                    deny = root / "deny-local.txt"
+                    deny.write_text("# none\n", encoding="utf-8")
+                    sha_file = root / "png-sha.txt"
+                    sha_file.write_text(hashlib.sha256(png_bytes).hexdigest() + "\n", encoding="utf-8")
+                    with mock.patch("urllib.request.urlopen") as urlopen:
+                        code, stdout, stderr = self._run(
+                            [
+                                str(page),
+                                str(shot),
+                                "--allow-file",
+                                str(allow),
+                                "--deny-file",
+                                str(deny),
+                                "--png-sha-file",
+                                str(sha_file),
+                                "--dry-run",
+                            ]
+                        )
+                urlopen.assert_not_called()
+                self.assertEqual(code, 1, stderr)
+                self.assertIn(f"rule: {rule}", stderr)
+                self.assertNotIn(secret, stderr)
+                self.assertEqual(stdout, "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            page = root / "index.html"
+            page.write_text(CLEAN_HTML, encoding="utf-8")
+            shot = root / "overview.png"
+            shot.write_bytes(bad_png)
+            allow = root / "publish-allow.txt"
+            allow.write_text("index.html\noverview.png\n", encoding="utf-8")
+            deny = root / "deny-local.txt"
+            deny.write_text("# none\n", encoding="utf-8")
+            sha_file = root / "png-sha.txt"
+            sha_file.write_text(hashlib.sha256(bad_png).hexdigest() + "\n", encoding="utf-8")
+            with mock.patch("urllib.request.urlopen") as urlopen:
+                code, stdout, stderr = self._run(
+                    [
+                        str(page),
+                        str(shot),
+                        "--allow-file",
+                        str(allow),
+                        "--deny-file",
+                        str(deny),
+                        "--png-sha-file",
+                        str(sha_file),
+                        "--dry-run",
+                    ]
+                )
+        urlopen.assert_not_called()
+        self.assertEqual(code, 1, stderr)
+        self.assertIn("rule: png:text-chunk-parse", stderr)
+        self.assertNotIn("this-is-not-zlib", stderr)
+        self.assertEqual(stdout, "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            page = root / "index.html"
+            page.write_text(CLEAN_HTML, encoding="utf-8")
+            shot = root / "overview.png"
+            shot.write_bytes(MIN_PNG)
+            allow = root / "publish-allow.txt"
+            allow.write_text("index.html\noverview.png\n", encoding="utf-8")
+            deny = root / "deny-local.txt"
+            deny.write_text("# none\n", encoding="utf-8")
+            sha_file = root / "png-sha.txt"
+            sha_file.write_text(("ab" * 32) + "\n", encoding="utf-8")
+            with mock.patch("urllib.request.urlopen") as urlopen:
+                code, _stdout, stderr = self._run(
+                    [
+                        str(page),
+                        str(shot),
+                        "--allow-file",
+                        str(allow),
+                        "--deny-file",
+                        str(deny),
+                        "--png-sha-file",
+                        str(sha_file),
+                        "--dry-run",
+                    ]
+                )
+        urlopen.assert_not_called()
+        self.assertEqual(code, 1)
+        self.assertIn("rule: png:sha-not-listed", stderr)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            page = root / "index.html"
+            page.write_text(CLEAN_HTML, encoding="utf-8")
+            shot = root / "overview.png"
+            shot.write_bytes(MIN_PNG)
+            allow = root / "publish-allow.txt"
+            allow.write_text("index.html\noverview.png\n", encoding="utf-8")
+            deny = root / "deny-local.txt"
+            deny.write_text("# none\n", encoding="utf-8")
+            with mock.patch("urllib.request.urlopen") as urlopen:
+                code, _stdout, stderr = self._run(
+                    [
+                        str(page),
+                        str(shot),
+                        "--allow-file",
+                        str(allow),
+                        "--deny-file",
+                        str(deny),
+                        "--dry-run",
+                    ]
+                )
+        urlopen.assert_not_called()
+        self.assertEqual(code, 1)
+        self.assertIn("rule: png:sha-file-required", stderr)
 
 
 class _Resp:

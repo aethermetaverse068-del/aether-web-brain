@@ -1,0 +1,4 @@
+# Local leak-guard deny lists. tools/deny.example.txt is the only tracked copy.
+deny*.txt
+!deny.example.txt
+!tools/deny.example.txt

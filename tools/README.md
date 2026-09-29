@@ -14,7 +14,7 @@ A file committed at `brain-map/index.html` is therefore served at:
 
 https://aethermetaverse068-del.github.io/aether-web-brain/brain-map/
 
-The publish script does not change that Pages configuration. It adds or updates only allowlisted files under `brain-map/`, on top of the current `main` tree:
+The publish script does not change that Pages configuration. It never commits to `main` and never force-pushes. It reads `main`, writes the allowlisted files onto a new branch `brain-map-publish/YYYY-MM-DDTHHMMSSZ`, and opens a pull request into `main` titled `Publish brain map <timestamp>`. A person reviews that pull request before it is merged. After merge, Pages serves:
 
 - `brain-map/index.html` — the HTML file, byte for byte
 - `brain-map/brain-map.demo.json` — optional demo JSON, when you pass that file
@@ -30,7 +30,7 @@ The `brain-map/index.html` committed in git is fictional demo content. It shows 
 Create a fine-grained personal access token limited to this one repository:
 
 - Repository access: only `aethermetaverse068-del/aether-web-brain`
-- Permissions: Contents — Read and write
+- Permissions: Contents — Read and write; Pull requests — Read and write
 
 Put it in the environment on the generating machine. Do not commit it, pass it as a command-line argument, or print it. The script reads `BRAIN_MAP_GH_TOKEN` and sends it only as an `Authorization` header.
 
@@ -45,25 +45,30 @@ The generating machine does not need git credentials. The script talks to the Gi
 From a checkout of this repo, or from a copy of `tools/publish_brain_map.py` (stdlib only; no pip packages):
 
 ```sh
-python3 tools/publish_brain_map.py /path/to/index.html --allow-file tools/publish-allow.txt
+cp tools/deny.example.txt /path/to/deny.txt   # keep this copy off the repo; add real tokens locally
+python3 tools/publish_brain_map.py /path/to/index.html \
+  --allow-file tools/publish-allow.txt \
+  --deny-file /path/to/deny.txt
 ```
 
-Optional companions (demo JSON and PNG screenshots) are extra arguments. Each basename must be listed in the allow file:
+`--deny-file` is required. Without it the script exits 1 and does not call the network. The real deny list is not committed: `deny*.txt` is gitignored except `tools/deny.example.txt`, which contains only fictional lines.
+
+Optional companions (demo JSON and PNG screenshots) are extra arguments. Each basename must be listed in the allow file. A PNG also needs `--png-sha-file` (one sha256 per line); a screenshot whose digest is not listed is refused. Symlinks are refused for every input path and for the allow, deny, and sha files.
 
 ```sh
-python3 tools/publish_brain_map.py /path/to/index.html /path/to/brain-map.demo.json /path/to/overview.png --allow-file /path/to/publish-allow.txt
+python3 tools/publish_brain_map.py /path/to/index.html /path/to/brain-map.demo.json /path/to/overview.png \
+  --allow-file /path/to/publish-allow.txt \
+  --deny-file /path/to/deny.txt \
+  --png-sha-file /path/to/png-sha.txt
 ```
 
 Check the leak guard and the publish plan with no network call:
 
 ```sh
-python3 tools/publish_brain_map.py /path/to/index.html --allow-file tools/publish-allow.txt --dry-run
-```
-
-Add local database table or column names at publish time. That file stays on the generating machine and is not committed. One token per line; blank lines and `#` comments are ignored:
-
-```sh
-python3 tools/publish_brain_map.py /path/to/index.html --allow-file tools/publish-allow.txt --deny-file /path/to/deny.txt
+python3 tools/publish_brain_map.py /path/to/index.html \
+  --allow-file tools/publish-allow.txt \
+  --deny-file /path/to/deny.txt \
+  --dry-run
 ```
 
 ## Allowlist
@@ -78,25 +83,27 @@ These names are still refused when they are listed:
 
 The only names that can pass are `index.html`, `brain-map.demo.json`, and PNG screenshots (`.png`). `tools/publish-allow.txt` lists the first two. Add each screenshot filename on its own line before publishing it. A refusal exits nonzero, prints the rule and the filename, and does not call the network.
 
-On success the script prints the Pages URL above. A guard hit exits nonzero, prints the rule name and a short masked excerpt, and does not call the network.
+On success the script prints the pull request URL and the Pages URL above. A guard hit exits nonzero, prints the rule name and a short masked excerpt, and does not call the network. The pull request is the only write; `main` is not updated.
 
 ## Guard
 
-Before anything leaves the machine the script scans the HTML (and an HTML-entity-decoded copy) case-insensitively for:
+Before anything leaves the machine the script scans the HTML, any JSON companion, and the text of every PNG `tEXt`, `iTXt` (including compressed), and `zTXt` chunk. A text chunk that cannot be parsed is refused. The scan is case-insensitive except where noted:
 
 - the words `aether`, `reiki`, `CASE-`, `claude`, `fleet`, `cases`, `spiritual`, `internal`, the whole word `jd`, and the Chinese words `艦隊` and `老闆`
 - any `.md` filename
 - absolute or internal paths: `/workspace`, `/home/`, `case-local`, `C:\`, `~/`
 - secret-looking strings: `sk-`, `ghp_`, `github_pat_`, `xox`, JWTs starting with `eyJ`, `sb_secret`, `service_role`, AWS keys starting with `AKIA`, and PEM `BEGIN … PRIVATE KEY` headers
 - email addresses
-- `*.supabase.co`
+- any `http://` or `https://` URL
+- the substring `supabase`, `*.supabase.co`, and a standalone 20-character lowercase project ref
+- cloud regions such as `ap-northeast-1` and `us-east-1`
 - each token in `--deny-file`
 
-The guard scans the HTML page and any JSON companion. It does not scan this README. PNG files are checked by filename and by the PNG signature.
+The guard does not scan this README.
 
 ## First real publish
 
-Review the generated page and the `--dry-run` output yourself before the first publish without `--dry-run`. That command is what replaces the demo page with the real one.
+Review the generated page and the `--dry-run` output yourself before the first publish without `--dry-run`. That command opens a pull request. Merging the pull request is what replaces the demo page.
 
 ## Tests
 

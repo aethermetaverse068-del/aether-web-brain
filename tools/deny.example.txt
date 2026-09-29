@@ -1,0 +1,6 @@
+# Fictional deny-list example. Copy this file to a private path and pass
+# that copy with --deny-file. Do not commit real table names, seat names,
+# or a project ref.
+fictional_table_alpha
+fictional_seat_north
+fictional_column_label
