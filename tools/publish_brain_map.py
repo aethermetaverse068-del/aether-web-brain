@@ -134,20 +134,66 @@ _PROTOCOL_RELATIVE_RE = re.compile(
     """
 )
 
-# Base64 alphabet plus the whitespace a data URI payload may wrap with.
-_B64_PAYLOAD_CHARS = set(
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\r\n\t "
+# Attribute values and CSS url() values. The project-ref exemption looks
+# only inside these, and only at a genuine data:[mime];base64, payload.
+_ATTR_OR_CSS_URL_VALUE = re.compile(
+    r"""(?ix)
+    (?:
+        (?<![\w-])[A-Za-z_:][\w:.-]*\s*=\s*
+        (?:
+            "(?P<dq>[^"]*)"
+            | '(?P<sq>[^']*)'
+            | (?P<uq>[^\s"'=<>`]+)
+        )
+        |
+        url\s*\(\s*
+        (?:
+            "(?P<cdq>[^"]*)"
+            | '(?P<csq>[^']*)'
+            | (?P<cuq>[^)\s]+)
+        )
+    )
+    """
+)
+
+# mime is type/subtype, optional parameters, then ;base64, and a contiguous
+# payload. Whitespace after the comma, or inside the payload, ends the run.
+_DATA_URI_PAYLOAD = re.compile(
+    r"(?i)data:[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*"
+    r"(?:;[a-z0-9!#$&^_.+-]+=[a-z0-9!#$&^_.+-]+)*;base64,([A-Za-z0-9+/=]*)"
 )
 
 
+def _data_uri_payload_spans(text: str) -> list[tuple[int, int]]:
+    """Spans of base64 payloads in attribute values and CSS url() values."""
+    spans: list[tuple[int, int]] = []
+    for found in _ATTR_OR_CSS_URL_VALUE.finditer(text):
+        for name, value in found.groupdict().items():
+            if not value:
+                continue
+            origin = found.start(name)
+            for uri in _DATA_URI_PAYLOAD.finditer(value):
+                payload = uri.group(1)
+                if not payload:
+                    continue
+                start = origin + uri.start(1)
+                spans.append((start, start + len(payload)))
+    return spans
+
+
 def _ref_accept(match: re.Match[str]) -> bool:
-    """False when the 20-character run sits inside a data: base64 payload."""
-    text = match.string
-    index = match.start()
-    while index > 0 and text[index - 1] in _B64_PAYLOAD_CHARS:
-        index -= 1
-    prefix = text[max(0, index - 32) : index].lower()
-    return not prefix.endswith("base64,")
+    """False only for a ref inside a data:[mime];base64, payload.
+
+    The payload must sit in an attribute value or CSS url(), with no
+    whitespace between `;base64,` and the end of that contiguous run.
+    Plain text such as `base64,` followed by a ref is still a hit.
+    """
+    start = match.start()
+    end = match.end()
+    for span_start, span_end in _data_uri_payload_spans(match.string):
+        if span_start <= start and end <= span_end:
+            return False
+    return True
 
 
 # Public-cloud location labels. Longer labels come first. Full names in docs
@@ -254,10 +300,13 @@ _RULES: list[tuple[str, re.Pattern[str], object]] = [
         re.compile(r"(?<![a-z0-9])[a-z0-9]{20}(?![a-z0-9])", re.I),
         _ref_accept,
     ),
-    # AWS-style af-south-9 and GCP-style europe-north9, any case.
+    # AWS-style af-south-9, zone af-south-9b, and GCP-style europe-north9.
     (
         "cloud-region",
-        re.compile(rf"\b(?:{_CLOUD_REGION_PREFIXES})-[a-z]+-?\d\b", re.I),
+        re.compile(
+            rf"\b(?:{_CLOUD_REGION_PREFIXES})-[a-z]+-?\d[a-z]?\b",
+            re.I,
+        ),
         None,
     ),
 ]

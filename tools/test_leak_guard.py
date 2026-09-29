@@ -780,6 +780,7 @@ class SecurityReviewTests(unittest.TestCase):
             ("eu-central-9", "cloud-region"),
             ("AP-SOUTHEAST-9", "cloud-region"),
             ("europe-north9", "cloud-region"),
+            ("af-south-9b", "cloud-region"),
         ]
         for body, rule in samples:
             with self.subTest(body=body):
@@ -1000,11 +1001,32 @@ class SecurityReviewTests(unittest.TestCase):
                 self.assertNotIn(fragment, stderr)
                 self.assertEqual(stdout, "")
 
-    def test_base64_data_uri_is_not_a_project_ref(self) -> None:
-        blob = "data:image/png;base64,++++" + ("B" * 20) + "++++"
-        self.assertNotIn("supabase-ref", _rules(f"<p>{blob}</p>"))
-        self.assertIn("supabase-ref", _rules(f"<p>{blob}</p><p>ABCDEFGHIJ0123456789</p>"))
-        self.assertEqual(pub.scan_html("<p class='col-md-6'>grid</p>"), [])
+    def test_plain_base64_text_does_not_hide_a_project_ref(self) -> None:
+        secret = "abcdefghijklmnopqrst"
+        self.assertEqual(len(secret), 20)
+        hits = pub.scan_html(f"<p>base64, {secret}</p>")
+        self.assertIn("supabase-ref", {hit.rule for hit in hits})
+        self.assertNotIn(secret, " ".join(hit.excerpt for hit in hits))
+        pasted = "data:image/png;base64,++++" + ("B" * 20) + "++++"
+        self.assertIn("supabase-ref", _rules(f"<p>{pasted}</p>"))
+        spaced = '<img src="data:image/png;base64, ' + ("B" * 20) + '">'
+        self.assertIn("supabase-ref", _rules(spaced))
+
+    def test_data_uri_image_in_attribute_or_css_url_passes(self) -> None:
+        payload = "++++" + ("B" * 20) + "++++"
+        uri = f"data:image/png;base64,{payload}"
+        self.assertNotIn("supabase-ref", _rules(f'<img src="{uri}" alt="dot">'))
+        self.assertNotIn(
+            "supabase-ref",
+            _rules(f"<style>b{{background:url('{uri}')}}</style>"),
+        )
+        encoded = base64.b64encode(MIN_PNG).decode("ascii")
+        page = f'<img src="data:image/png;base64,{encoded}" alt="dot">'
+        self.assertEqual(pub.scan_html(page), [])
+        self.assertIn(
+            "supabase-ref",
+            _rules(page + "<p>ABCDEFGHIJ0123456789</p>"),
+        )
 
     def test_png_text_chunks_and_sha_allowlist(self) -> None:
         self.assertEqual(pub.png_text_fragments(MIN_PNG), [])
