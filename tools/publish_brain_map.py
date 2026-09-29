@@ -13,6 +13,7 @@ import base64
 import errno
 import hashlib
 import html as html_lib
+import html.parser
 import json
 import os
 import re
@@ -134,63 +135,183 @@ _PROTOCOL_RELATIVE_RE = re.compile(
     """
 )
 
-# Attribute values and CSS url() values. The project-ref exemption looks
-# only inside these, and only at a genuine data:[mime];base64, payload.
-_ATTR_OR_CSS_URL_VALUE = re.compile(
+# Real markup only. These names, plus url() in style, may carry an image
+# data URI. alt, title, data-*, and every other attribute may not.
+_IMAGE_DATA_ATTRS = frozenset({"src", "href", "srcset", "poster"})
+
+# image/* only. Optional parameters, then ;base64, then one contiguous
+# payload. Whitespace after the comma, or inside the payload, ends the run.
+_DATA_URI_PAYLOAD = re.compile(
+    r"(?i)data:image/[a-z0-9][a-z0-9!#$&^_.+-]*"
+    r"(?:;[a-z0-9!#$&^_.+-]+=[a-z0-9!#$&^_.+-]+)*;base64,([A-Za-z0-9+/=]*)"
+)
+
+# Used only on style-attribute values and on <style> element text.
+_CSS_URL_VALUE = re.compile(
     r"""(?ix)
+    url\s*\(\s*
     (?:
-        (?<![\w-])[A-Za-z_:][\w:.-]*\s*=\s*
-        (?:
-            "(?P<dq>[^"]*)"
-            | '(?P<sq>[^']*)'
-            | (?P<uq>[^\s"'=<>`]+)
-        )
-        |
-        url\s*\(\s*
-        (?:
-            "(?P<cdq>[^"]*)"
-            | '(?P<csq>[^']*)'
-            | (?P<cuq>[^)\s]+)
-        )
+        "(?P<dq>[^"]*)"
+        | '(?P<sq>[^']*)'
+        | (?P<uq>[^)\s]+)
     )
     """
 )
 
-# mime is type/subtype, optional parameters, then ;base64, and a contiguous
-# payload. Whitespace after the comma, or inside the payload, ends the run.
-_DATA_URI_PAYLOAD = re.compile(
-    r"(?i)data:[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*"
-    r"(?:;[a-z0-9!#$&^_.+-]+=[a-z0-9!#$&^_.+-]+)*;base64,([A-Za-z0-9+/=]*)"
-)
+
+def _offset_at(text: str, line: int, column: int) -> int:
+    """Map HTMLParser's 1-based line and 0-based column to a string index."""
+    index = 0
+    for _ in range(line - 1):
+        newline = text.find("\n", index)
+        if newline < 0:
+            return len(text)
+        index = newline + 1
+    return index + column
 
 
-def _data_uri_payload_spans(text: str) -> list[tuple[int, int]]:
-    """Spans of base64 payloads in attribute values and CSS url() values."""
+def _is_json_text(text: str) -> bool:
+    """True when the whole document is JSON. Those files get no exemption."""
+    stripped = text.lstrip(" \t\r\n")
+    if not stripped or stripped[0] not in '{["':
+        return False
+    try:
+        json.loads(text)
+    except ValueError:
+        return False
+    return True
+
+
+def _payload_spans_in(fragment: str, origin: int) -> list[tuple[int, int]]:
     spans: list[tuple[int, int]] = []
-    for found in _ATTR_OR_CSS_URL_VALUE.finditer(text):
+    for uri in _DATA_URI_PAYLOAD.finditer(fragment):
+        payload = uri.group(1)
+        if not payload:
+            continue
+        start = origin + uri.start(1)
+        spans.append((start, start + len(payload)))
+    return spans
+
+
+def _url_payload_spans(fragment: str, origin: int) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    for found in _CSS_URL_VALUE.finditer(fragment):
         for name, value in found.groupdict().items():
             if not value:
                 continue
-            origin = found.start(name)
-            for uri in _DATA_URI_PAYLOAD.finditer(value):
-                payload = uri.group(1)
-                if not payload:
-                    continue
-                start = origin + uri.start(1)
-                spans.append((start, start + len(payload)))
+            spans.extend(_payload_spans_in(value, origin + found.start(name)))
+    return spans
+
+
+def _iter_tag_attr_values(tag: str) -> list[tuple[str, int, int]]:
+    """Attribute values inside one start tag, as (name, start, end) offsets."""
+    found: list[tuple[str, int, int]] = []
+    index = 1
+    limit = len(tag)
+    while index < limit and tag[index] not in " \t\r\n\f/>":
+        index += 1
+    while index < limit:
+        while index < limit and tag[index] in " \t\r\n\f/":
+            index += 1
+        if index >= limit or tag[index] == ">":
+            break
+        name_at = index
+        while index < limit and tag[index] not in " \t\r\n\f=/>":
+            index += 1
+        name = tag[name_at:index].lower()
+        while index < limit and tag[index] in " \t\r\n\f":
+            index += 1
+        if index >= limit or tag[index] != "=":
+            continue
+        index += 1
+        while index < limit and tag[index] in " \t\r\n\f":
+            index += 1
+        if index >= limit:
+            break
+        if tag[index] in "\"'":
+            quote = tag[index]
+            index += 1
+            value_at = index
+            while index < limit and tag[index] != quote:
+                index += 1
+            found.append((name, value_at, index))
+            if index < limit:
+                index += 1
+            continue
+        value_at = index
+        while index < limit and tag[index] not in " \t\r\n\f>":
+            index += 1
+        found.append((name, value_at, index))
+    return found
+
+
+class _MarkupSpanParser(html.parser.HTMLParser):
+    """Locate real attribute values and <style> contents. Text is not markup."""
+
+    def __init__(self, text: str) -> None:
+        super().__init__(convert_charrefs=False)
+        self.text = text
+        self.spans: list[tuple[int, int]] = []
+        self._style_at: int | None = None
+        self.feed(text)
+        self.close()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        line, column = self.getpos()
+        start = _offset_at(self.text, line, column)
+        raw = self.get_starttag_text() or ""
+        if self.text[start : start + len(raw)] != raw:
+            return
+        for name, value_at, value_end in _iter_tag_attr_values(raw):
+            value = raw[value_at:value_end]
+            origin = start + value_at
+            if name in _IMAGE_DATA_ATTRS:
+                self.spans.extend(_payload_spans_in(value, origin))
+            elif name == "style":
+                self.spans.extend(_url_payload_spans(value, origin))
+        if tag == "textarea" and not raw.endswith("/>"):
+            self.set_cdata_mode("textarea")
+        if tag == "style" and not raw.endswith("/>"):
+            self._style_at = start + len(raw)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag != "style" or self._style_at is None:
+            return
+        line, column = self.getpos()
+        end = _offset_at(self.text, line, column)
+        if end >= self._style_at:
+            fragment = self.text[self._style_at : end]
+            self.spans.extend(_url_payload_spans(fragment, self._style_at))
+        self._style_at = None
+
+
+def _image_payload_spans(text: str) -> list[tuple[int, int]]:
+    """Base64 payloads that may hide a project ref. JSON and plain text: none."""
+    cached = getattr(_image_payload_spans, "_cache", None)
+    if isinstance(cached, tuple) and cached[0] is text:
+        return cached[1]
+    spans: list[tuple[int, int]] = []
+    if not _is_json_text(text):
+        try:
+            spans = _MarkupSpanParser(text).spans
+        except Exception:
+            spans = []
+    setattr(_image_payload_spans, "_cache", (text, spans))
     return spans
 
 
 def _ref_accept(match: re.Match[str]) -> bool:
-    """False only for a ref inside a data:[mime];base64, payload.
+    """False only for a ref inside an image data URI in real markup.
 
-    The payload must sit in an attribute value or CSS url(), with no
-    whitespace between `;base64,` and the end of that contiguous run.
-    Plain text such as `base64,` followed by a ref is still a hit.
+    The payload must be a contiguous `data:image/...;base64,` run, with no
+    whitespace, in src, href, srcset, or poster, or in url() in a style
+    attribute or a <style> element. Text, script, comments, textarea, and
+    JSON are never exempt.
     """
     start = match.start()
     end = match.end()
-    for span_start, span_end in _data_uri_payload_spans(match.string):
+    for span_start, span_end in _image_payload_spans(match.string):
         if span_start <= start and end <= span_end:
             return False
     return True

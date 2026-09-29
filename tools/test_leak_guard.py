@@ -1027,6 +1027,35 @@ class SecurityReviewTests(unittest.TestCase):
             "supabase-ref",
             _rules(page + "<p>ABCDEFGHIJ0123456789</p>"),
         )
+        self.assertNotIn(
+            "supabase-ref",
+            _rules(f'<div style="background:url({uri})"></div>'),
+        )
+        self.assertNotIn("supabase-ref", _rules(f'<a href="{uri}">map</a>'))
+
+    def test_base64_exemption_rejects_non_markup_and_non_image(self) -> None:
+        ref = "abcdefghij0123456789"
+        self.assertEqual(len(ref), 20)
+        image = f"data:image/png;base64,{ref}"
+        cases = {
+            "text-x-equals": f"<p>x={image}</p>",
+            "text-title-equals": f'<p>title = "{image}"</p>',
+            "text-url": f"<p>url({image})</p>",
+            "script": f'<script>const u="data:text/plain;base64,{ref}"</script>',
+            "comment": f"<!-- a={image} -->",
+            "textarea": f"<textarea>a={image}</textarea>",
+            "json": json.dumps({"shot": f"x={image}"}),
+            "dangling-quote": f'<p>a="</p><p>{image}</p><p>"</p>',
+            "alt": f'<img alt="{image}">',
+            "title": f'<img title="{image}">',
+            "data-x": f'<img data-x="{image}">',
+            "text-plain-src": f'<img src="data:text/plain;base64,{ref}">',
+        }
+        for label, html in cases.items():
+            with self.subTest(label=label):
+                hits = pub.scan_html(html)
+                self.assertIn("supabase-ref", {hit.rule for hit in hits})
+                self.assertNotIn(ref, " ".join(hit.excerpt for hit in hits))
 
     def test_png_text_chunks_and_sha_allowlist(self) -> None:
         self.assertEqual(pub.png_text_fragments(MIN_PNG), [])
