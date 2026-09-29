@@ -139,6 +139,21 @@ _PROTOCOL_RELATIVE_RE = re.compile(
 # data URI. alt, title, data-*, and every other attribute may not.
 _IMAGE_DATA_ATTRS = frozenset({"src", "href", "srcset", "poster"})
 
+# These elements are raw text on every Python version. Their contents are
+# never parsed as tags, so a data URI inside them cannot be exempted.
+_RAW_TEXT_TAGS = frozenset(
+    {
+        "textarea",
+        "title",
+        "xmp",
+        "plaintext",
+        "iframe",
+        "noembed",
+        "noframes",
+        "noscript",
+    }
+)
+
 # image/* only. Optional parameters, then ;base64, then one contiguous
 # payload. Whitespace after the comma, or inside the payload, ends the run.
 _DATA_URI_PAYLOAD = re.compile(
@@ -270,8 +285,8 @@ class _MarkupSpanParser(html.parser.HTMLParser):
                 self.spans.extend(_payload_spans_in(value, origin))
             elif name == "style":
                 self.spans.extend(_url_payload_spans(value, origin))
-        if tag == "textarea" and not raw.endswith("/>"):
-            self.set_cdata_mode("textarea")
+        if tag in _RAW_TEXT_TAGS and not raw.endswith("/>"):
+            self.set_cdata_mode(tag)
         if tag == "style" and not raw.endswith("/>"):
             self._style_at = start + len(raw)
 
@@ -301,14 +316,23 @@ def _image_payload_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def _ref_accept(match: re.Match[str]) -> bool:
-    """False only for a ref inside an image data URI in real markup.
+# Only this string may use data-URI exemptions. scan_html sets it to the
+# original raw document. Entity-decoded copies are scanned with no exemption.
+_ref_exempt_text: str | None = None
 
-    The payload must be a contiguous `data:image/...;base64,` run, with no
-    whitespace, in src, href, srcset, or poster, or in url() in a style
-    attribute or a <style> element. Text, script, comments, textarea, and
-    JSON are never exempt.
+
+def _ref_accept(match: re.Match[str]) -> bool:
+    """False only for a ref inside an image data URI in the original markup.
+
+    Spans come from the raw HTML only. A decoded or unescaped copy is always
+    a hit. The payload must be a contiguous `data:image/...;base64,` run, with
+    no whitespace, in src, href, srcset, or poster, or in url() in a style
+    attribute or a <style> element. Text, script, comments, textarea, title,
+    xmp, plaintext, iframe, noembed, noframes, noscript, and JSON are never
+    exempt.
     """
+    if match.string is not _ref_exempt_text:
+        return True
     start = match.start()
     end = match.end()
     for span_start, span_end in _image_payload_spans(match.string):
@@ -565,15 +589,21 @@ def report_filename_refusals(refusals: list[tuple[str, str]]) -> None:
 
 def scan_html(html: str, deny_tokens: list[str] | None = None) -> list[GuardHit]:
     """Return leak-guard hits. An empty list means the page may be published."""
+    global _ref_exempt_text
     variants = _variants(html)
     hits: list[GuardHit] = []
     seen_rules: set[str] = set()
-    for name, pattern, accept in _RULES:
-        match = _first_match(pattern, variants, accept)
-        if match is None:
-            continue
-        hits.append(GuardHit(name, mask_secret(match.group(0))))
-        seen_rules.add(name)
+    previous = _ref_exempt_text
+    _ref_exempt_text = html
+    try:
+        for name, pattern, accept in _RULES:
+            match = _first_match(pattern, variants, accept)
+            if match is None:
+                continue
+            hits.append(GuardHit(name, mask_secret(match.group(0))))
+            seen_rules.add(name)
+    finally:
+        _ref_exempt_text = previous
     for token in deny_tokens or []:
         key = "deny:" + token.casefold()
         if key in seen_rules:

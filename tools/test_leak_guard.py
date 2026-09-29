@@ -1057,6 +1057,29 @@ class SecurityReviewTests(unittest.TestCase):
                 self.assertIn("supabase-ref", {hit.rule for hit in hits})
                 self.assertNotIn(ref, " ".join(hit.excerpt for hit in hits))
 
+    def test_entity_decoded_img_is_not_exempt(self) -> None:
+        ref = "q" * 20
+        encoded_ref = "".join(f"&#{ord(ch)};" for ch in ref)
+        escaped = f"&lt;img src=&quot;data:image/png;base64,{encoded_ref}&quot;&gt;"
+        self.assertNotIn(ref, escaped)
+        hits = pub.scan_html(escaped)
+        self.assertIn("supabase-ref", {hit.rule for hit in hits})
+        self.assertNotIn(ref, " ".join(hit.excerpt for hit in hits))
+        self.assertNotIn(
+            "supabase-ref",
+            _rules(f'<img src="data:image/png;base64,{ref}">'),
+        )
+
+    def test_raw_text_elements_do_not_exempt_a_data_uri(self) -> None:
+        ref = "abcdefghij0123456789"
+        snippet = f"<img src=data:image/png;base64,{ref}>"
+        for tag in ("title", "xmp", "plaintext", "iframe", "noembed", "noframes", "noscript"):
+            html = f"<{tag}>{snippet}" if tag == "plaintext" else f"<{tag}>{snippet}</{tag}>"
+            with self.subTest(tag=tag):
+                hits = pub.scan_html(html)
+                self.assertIn("supabase-ref", {hit.rule for hit in hits})
+                self.assertNotIn(ref, " ".join(hit.excerpt for hit in hits))
+
     def test_png_text_chunks_and_sha_allowlist(self) -> None:
         self.assertEqual(pub.png_text_fragments(MIN_PNG), [])
         text_png = _png_with_chunk(b"tEXt", b"Note\x00claude-hidden-token")
